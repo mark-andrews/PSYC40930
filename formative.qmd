@@ -1,0 +1,51 @@
+---
+title: "Formative Assessment Specification"
+author: "Mark Andrews"
+execute:
+    error: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
+---
+
+You will practice an end-to-end machine-learning analysis that mirrors Part 1 of the summative assessment.
+You will get written feedback on strengths and actionable improvements.
+This exercise is optional and ungraded.
+
+## Task
+
+Using a behavioural-science dataset of your choice, perform and report a binary classification analysis with a simple baseline model.
+Use logistic regression or naive Bayes, or some other simple binary classifier, as the main classifier.
+Follow the same workflow and report standards as the summative assessment.
+
+## Requirements
+
+* Report length: 4 pages excluding references and appendices.
+* Tools: Python and Quarto.
+* Reproducibility: single zip archive containing the .qmd, rendered html (and optionally pdf), Python source, data or a fetch script, and an environment file.
+* Workflow: make one stratified 80/20 train/test split; run k-fold cross-validation on the 80% to tune hyperparameters; refit on the 80%; evaluate once on the 20%. If you prefer, use nested cross-validation.
+* Metrics: report ROC-AUC and PR-AUC; include a thresholded confusion matrix with accuracy, precision, recall, and F1; state how you handled class imbalance.
+* Baseline: include a trivial baseline (majority class) and compare it to your chosen model.
+* Open science: pin package versions, fix random seeds, and provide exact commands to reproduce.
+
+## What to include in the 4 pages
+
+* A focused research question relevant to psychology or a related field.
+* Dataset description: source, license, N, features, target, and any exclusions.
+* Preprocessing summary: imputation, encoding, scaling, and leakage control via pipelines.
+* Model and tuning: chosen classifier, hyperparameters considered, cross-validation setup.
+* Results: the required metrics, a brief table comparing baseline vs model, and one figure (ROC or PR curve).
+* Short interpretation and error analysis linked to the research question.
+
+## Submission
+
+Upload the single zip to the designated Dropbox by the stated date on the VLE.
+Late submissions may not receive feedback.
+
+## Feedback
+
+We will use the same rubric as in the summative assessment. 
+You will receive rubric-style comments on framing, methodology, validation, interpretation, and reproducibility.
+Use this to improve your summative submission.

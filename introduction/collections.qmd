@@ -1,0 +1,436 @@
+---
+title: "Introduction to Python: Collection data types"
+author: "Mark Andrews"
+jupyter: python3
+execute:
+    error: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
+---
+
+*Collections* group multiple values into one object.
+
+Main kinds:
+
+* *Sequences* with order and indexing: lists, tuples, `range`.
+* *Mappings* from keys to values: dictionaries.
+* *Sets* of unique elements without order: sets, `frozenset`.
+
+Know mutability:
+
+* *Mutable*: list, dict, set, `bytearray`.
+* *Immutable*: tuple, `range`, `frozenset`.
+
+We focus on lists, dictionaries, sets, and tuples. `range` appears where useful.
+
+---
+
+## Lists
+
+*Lists* are ordered, mutable sequences. Good for grow/shrink, reordering, and heterogeneous items.
+
+### Create and inspect
+
+```{python echo=false}
+primes = [2, 3, 5, 7, 11, 13, 17]
+```
+
+*Explanation:* Literal list of integers.
+
+```{python}
+type(primes), len(primes)
+```
+
+*Explanation:* Confirm it’s a `list` and check its length.
+
+### Indexing, slicing, membership
+
+```{python}
+primes[0], primes[-1], primes[0:3], primes[-3:], 5 in primes
+```
+
+*Explanation:* First item, last item, a slice, the last three, membership test.
+
+### Concatenation and repetition
+
+```{python}
+more_primes = [19, 23, 29]
+primes + more_primes, [1, 0] * 3
+```
+
+*Explanation:* `+` concatenates lists. `*` repeats the list.
+
+### Mutation: item assignment and methods
+
+```{python echo=false}
+numbers = [10, 20, 30]
+```
+
+*Explanation:* Fresh list to mutate.
+
+```{python}
+numbers[1] = 99; numbers
+```
+
+*Explanation:* Replace an element in place.
+
+```{python}
+numbers.append(40); numbers
+```
+
+*Explanation:* Append one item at the end.
+
+```{python}
+numbers.extend([50, 60]); numbers
+```
+
+*Explanation:* Extend by multiple items from an iterable.
+
+```{python}
+numbers.insert(1, 15); numbers
+```
+
+*Explanation:* Insert at a position, shifting items to the right.
+
+```{python}
+numbers.remove(30); numbers
+```
+
+*Explanation:* Remove first occurrence of a value. Error if not present.
+
+```{python}
+last = numbers.pop(); last, numbers
+```
+
+*Explanation:* Pop and return the last item.
+
+### Sorting
+
+```{python}
+sorted(primes), primes  # non-mutating
+```
+
+*Explanation:* `sorted(seq)` returns a new sorted list; original unchanged.
+
+```{python}
+primes.sort(reverse=True); primes  # in-place
+```
+
+*Explanation:* `.sort()` mutates in place; `reverse=True` flips order.
+
+```{python}
+words = ["AAA", "b", "Cc"]
+sorted(words, key=str.lower)
+```
+
+*Explanation:* Sort with a key function for case-insensitive order.
+
+### Copying: alias vs copy
+
+```{python}
+a = [1, 2, 3]
+b = a            # alias
+c = a[:]         # shallow copy
+id(a), id(b), id(c)
+```
+
+*Explanation:* `b` and `a` refer to the *same* object; `c` is a new list.
+
+```{python}
+a[0] = 99; a, b, c
+```
+
+*Explanation:* Mutating `a` also changes `b`. Copies are independent.
+
+> Note: shallow copies copy references; nested lists still share inner objects.
+
+### Common patterns
+
+```{python}
+# list comprehension
+squares = [n*n for n in range(6)]
+squares
+```
+
+*Explanation:* Build a list from a loop in one expression.
+
+```{python}
+# avoid this pitfall
+rows_bad = [[0]*3]*4
+rows_bad[0][0] = 1; rows_bad
+```
+
+*Explanation:* Repetition shares the same inner list. Edits affect all rows.
+
+```{python}
+# correct independent rows
+rows = [[0]*3 for _ in range(4)]
+rows[0][0] = 1; rows
+```
+
+*Explanation:* Comprehension creates distinct inner lists.
+
+---
+
+## Dictionaries
+
+*Dictionaries* map keys to values. Keys must be *hashable* (immutable types like `str`, `int`, `tuple` of immutables).
+
+### Create and inspect
+
+```{python echo=false}
+d = {'a': 42, 'b': 'hello', 'c': 3.14}
+```
+
+*Explanation:* Literal dict with three key–value pairs.
+
+```{python}
+type(d), len(d), d
+```
+
+*Explanation:* Confirm type and size; show contents (in insertion order).
+
+### Access and update
+
+```{python}
+d['a'], d.get('z'), d.get('z', 'missing')
+```
+
+*Explanation:* Indexing raises if key absent; `.get` returns default instead.
+
+```{python}
+d['a'] = 100; d
+```
+
+*Explanation:* Assign to update or create an entry.
+
+```{python}
+d.update({'d': 999, 'e': 1000}); d
+```
+
+*Explanation:* Merge another mapping into `d` in place.
+
+### Keys, values, items, membership
+
+```{python}
+list(d.keys()), list(d.values()), list(d.items()), 'b' in d, 'hello' in d
+```
+
+*Explanation:* Views of keys, values, and items. `in` tests keys, not values.
+
+### Iteration with unpacking
+
+```{python}
+pairs = []
+for k, v in d.items():
+    pairs.append((k, v))
+pairs
+```
+
+*Explanation:* Iterate key–value pairs cleanly with tuple unpacking.
+
+### Valid and invalid keys
+
+```{python}
+d[(1, 2, 3)] = "tuple key"; d[(1, 2, 3)]
+```
+
+*Explanation:* Tuples are hashable if their contents are immutable.
+
+```{python}
+try:
+    d[[1, 2, 3]] = "list key"
+except TypeError as e:
+    str(e).split(':')[0]
+```
+
+*Explanation:* Lists are unhashable, so they cannot be keys.
+
+### Building and merging
+
+```{python}
+# dict literal vs constructor
+e = dict(x=1, y=[2,3], z="hi")
+e
+```
+
+*Explanation:* `dict(...)` with identifiers as keys is handy for simple cases.
+
+```{python}
+# Py3.9+: merge with |
+x, y = {'a': 1, 'b': 2}, {'b': 99, 'c': 3}
+z = x | y
+x, y, z
+```
+
+*Explanation:* `|` returns a new dict; right side wins on conflicts. `|=` updates in place.
+
+### Dict comprehension
+
+```{python}
+squares = {n: n*n for n in range(5)}
+squares
+```
+
+*Explanation:* Build a dict from an expression and loop.
+
+---
+
+## Sets
+
+*Sets* store unique, unordered elements with fast membership tests.
+
+### Create and deduplicate
+
+```{python}
+s = {1, 2, 3}; type(s), s
+```
+
+*Explanation:* Literal set.
+
+```{python}
+list_with_dupes = [1, 2, 2, 3, 1, 4]
+set(list_with_dupes)
+```
+
+*Explanation:* Convert to `set` to remove duplicates.
+
+### Add/remove and membership
+
+```{python}
+s.add(4); 3 in s, 5 in s, s
+```
+
+*Explanation:* Add an element and test membership.
+
+```{python}
+s.remove(2); s
+```
+
+*Explanation:* Remove an element; error if missing.
+
+```{python}
+s.discard(999); s
+```
+
+*Explanation:* `discard` removes if present, else does nothing.
+
+### Set algebra
+
+```{python}
+a, b = {1,2,3}, {3,4,5}
+a | b, a & b, a - b, a ^ b
+```
+
+*Explanation:* Union, intersection, difference, symmetric difference.
+
+```{python}
+a <= {1,2,3,4}, {1,2} < a, a.issuperset({1,2})
+```
+
+*Explanation:* Subset and superset tests.
+
+### Hashability rule
+
+```{python}
+try:
+    { [1,2], 3 }
+except TypeError as e:
+    str(e).split(':')[0]
+```
+
+*Explanation:* Only hashable (immutable) objects can be set elements.
+
+### Immutable set
+
+```{python}
+f = frozenset({1,2,3}); f
+```
+
+*Explanation:* `frozenset` is an immutable set. Useful as a dict key or set element.
+
+---
+
+## Tuples
+
+*Tuples* are ordered, immutable sequences. Good for fixed-size records and as dictionary keys.
+
+### Create and inspect
+
+```{python}
+t = (10, 20, 30); type(t), len(t), t[0], t[-1], t[0:2]
+```
+
+*Explanation:* Tuple literal, length, indexing, and slicing.
+
+```{python}
+singleton = (42,)  # note the comma
+type(singleton), singleton
+```
+
+*Explanation:* One-element tuple syntax requires a trailing comma.
+
+### Immutability and use as keys
+
+```{python}
+# t[0] = 99  # would raise: tuples are immutable
+d = {('row', 1): 'A1', ('row', 2): 'A2'}
+d[('row', 2)]
+```
+
+*Explanation:* You cannot assign into a tuple. Tuples of immutables are hashable and work as dict keys.
+
+### Packing and unpacking
+
+```{python}
+point = (3, 4)
+x, y = point
+x, y
+```
+
+*Explanation:* Unpack tuple elements into names.
+
+```{python}
+a, *mid, z = (1, 2, 3, 4, 5)
+a, mid, z
+```
+
+*Explanation:* Star-unpacking captures the middle as a list.
+
+### Returning multiple values
+
+```{python}
+def min_max(seq):
+    return (min(seq), max(seq))
+
+lo, hi = min_max([3, 1, 9, 2])
+lo, hi
+```
+
+*Explanation:* Functions often return tuples; unpack on the left.
+
+---
+
+## `range` (helper sequence)
+
+`range(start, stop, step)` represents a sequence of integers efficiently.
+
+```{python}
+r = range(2, 10, 2)
+r, list(r), 4 in r, len(r)
+```
+
+*Explanation:* `range` is a sequence for iteration and membership tests. Convert to `list` when you need the concrete values.
+
+---
+
+### Summary
+
+* *List*: ordered, mutable. Grow/shrink, sort, and slice.
+* *Dict*: key→value mapping. Keys must be hashable.
+* *Set*: unique elements, fast membership, set algebra.
+* *Tuple*: ordered, immutable. Good for fixed records and keys.
+* `range` helps iterate integer sequences without storing them all.

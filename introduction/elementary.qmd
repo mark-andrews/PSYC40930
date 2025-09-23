@@ -1,0 +1,550 @@
+---
+title: "Introduction to Python: Elementary data types"
+author: "Mark Andrews"
+jupyter: python3
+execute:
+    error: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
+---
+
+Everything you manipulate in Python (any data, for example) is an *object*. 
+
+Every object has:
+
+* a *type* (what kind of thing it is),
+* a *value* (its data),
+* an *identity* (which specific object it is).
+
+A *name* is a label that refers to an object.
+`x = 42` binds the name `x` to an integer object whose value is `42`.
+
+`type(obj)` reports the object’s type.
+`id(obj)` gives a unique identity number during the object’s lifetime (in CPython this is the memory address). 
+Use `id` only to reason about identity, not for math.
+
+Python uses *duck typing*. Code cares about what an object can do, not its declared type. If an object “acts like” a number for the needed operations, you can use it where a n:umber is expected.
+Python is *dynamically typed*: names have no fixed type; objects do.
+
+Elementary data types are *single-value objects*. 
+Most elementary types are *immutable*. 
+You do not change the object; operations create new objects. 
+
+Key elementary data types:
+
+* *int*: arbitrary-precision integers.
+* *float*: IEEE-754 double-precision real numbers.
+* *bool*: `True` or `False` (a subtype of `int`).
+* *str*: Unicode text. Immutable. Although a sequence of characters, it behaves like a single atomic piece of data in many programs, so we treat it here before other collections.
+* *NoneType*: the singleton `None`, meaning “no value”.
+
+Useful mechanics you will use throughout:
+
+* `type(obj)` reports an object’s type; `id(obj)` reports its identity; `==` tests *value* equality; `is` tests *identity*.
+* *Duck typing*: write code that relies on available operations, not on declared types.
+* *Literals and conversion*: write values directly (`42`, `3.14`, `'hi'`) and convert with constructors (`int("7")`, `float("2.5")`, `str(3.14)`).
+* *Truthiness*: `False`, `0`, `0.0`, `''`, and `None` are falsey; most other values are truthy.
+
+After these atomic types, the next section covers *collections* that group multiple values (lists, tuples, dicts, sets, ranges).
+
+
+## Integers
+
+*Integers* are whole numbers. Examples: `0`, `-3`, `42`.
+Python integers have *arbitrary precision*. 
+They grow to as many digits as needed. There is no fixed 32-bit or 64-bit limit, so you do not get overflow to a wrapped value.
+
+Core operators: `+`, `-`, `*`, `*` (power), `//` (floor division), `%` (remainder).
+
+### Names, objects, and values
+
+```{python echo=false}
+x = 42
+```
+
+*Explanation:* Create an integer object with value `42`, then bind the name `x` to it.
+
+```{python}
+id(x)
+```
+
+*Explanation:* Show the identity of the object bound to `x`. This is a unique integer while the object exists. In CPython it equals the object’s memory address.
+
+```{python}
+type(x)
+```
+
+*Explanation:* Show the type of the object bound to `x`. You should see `<class 'int'>`.
+
+```{python echo=false}
+y = 101
+```
+
+*Explanation:* Bind `y` to a different integer object with value `101`.
+
+```{python}
+id(y)
+```
+
+*Explanation:* Show `y`’s object identity. It will differ from `id(x)` because `y` refers to a different object.
+
+```{python}
+type(y)
+```
+
+*Explanation:* Confirm that `y` also refers to an `int`.
+
+```{python echo=false}
+z = x + y
+```
+
+*Explanation:* Compute a new integer by adding the values of the two `int` objects. Bind the name `z` to that new result object.
+
+```{python}
+type(z)
+```
+
+*Explanation:* The result of adding two `int` objects is an `int`.
+
+```{python}
+id(z)
+```
+
+*Explanation:* Show the identity of the result object bound to `z`. It is a distinct object from both `x` and `y`.
+
+```{python}
+# addition, subtraction, multiplication, true division
+3 + 5, 10 - 7, 4 * 6, 7 / 2
+```
+
+*Explanation:* `+ - * /` do standard arithmetic. `/` always returns a float.
+
+```{python}
+# floor division and remainder
+7 // 2, 7 % 2
+```
+
+*Explanation:* `//` is floor division (rounds down to the nearest integer). `%` is the remainder.
+
+```{python}
+# floor division with negatives
+7 // -2, -7 // 2, -7 % 2, 7 % -2
+```
+
+*Explanation:* Floor division rounds *down*: `7 // -2 == -4`. The identity `a == (a // b) * b + (a % b)` always holds.
+
+```{python}
+# power
+2 * 10, 10 * 0, 5 * 3
+```
+
+*Explanation:* `*` is exponentiation.
+
+```{python}
+# divmod: quotient and remainder together
+divmod(23, 5)
+```
+
+*Explanation:* `divmod(a, b)` returns `(a // b, a % b)`.
+
+```{python}
+# absolute value and unary minus
+abs(-17), -(-3)
+```
+
+*Explanation:* `abs` removes the sign. Unary `-` negates a number.
+
+```{python}
+# integer vs float results
+type(7/2), type(7//2)
+```
+
+*Explanation:* `/` yields `float`. `//` yields `int` for integer inputs.
+
+```{python}
+# large integers: arbitrary precision, no overflow
+big = 10*100  # a googol
+big + 1, len(str(big))
+```
+
+*Explanation:* Python grows integers as needed. No 32-/64-bit wraparound.
+
+```{python}
+# parentheses control order of operations
+(2 + 3) * 4, 2 + (3 * 4)
+```
+
+*Explanation:* Use parentheses to make precedence explicit.
+
+```{python}
+# exponent with modulo (optional, fast for big ints)
+pow(7, 128, 13)
+```
+
+*Explanation:* `pow(a, b, m)` computes `(a*b) % m` efficiently.
+
+## Floats (decimal numbers)
+
+*Floats* represent real numbers using IEEE-754 double precision. They are fast and approximate. Many simple decimals cannot be represented exactly in binary, so you will see tiny rounding errors. Example: `0.1 + 0.2` is close to, but not exactly, `0.3`.
+
+Rules of thumb:
+
+* `/` is true division and returns a float.
+* Mixing `int` and `float` promotes to `float`.
+* Use `round(x, n)` for display.
+* Use `math.isclose(a, b, rel_tol=..., abs_tol=...)` to compare numeric results.
+* For exact base-10 money math, consider `decimal.Decimal`.
+
+### Creating and inspecting floats
+
+```{python echo=false}
+x = 42.0
+```
+
+*Explanation:* Bind `x` to a float with value `42.0`.
+
+```{python}
+type(x)
+```
+
+*Explanation:* Confirm the object’s type: `<class 'float'>`.
+
+### Arithmetic and promotion
+
+```{python echo=false}
+y = 10101.0
+```
+
+*Explanation:* Another float.
+
+```{python}
+x + y
+```
+
+*Explanation:* Adding two floats yields a float.
+
+```{python echo=false}
+y = 101
+```
+
+*Explanation:* Rebind `y` to an integer.
+
+```{python}
+type(y)
+```
+
+*Explanation:* `y` is now `<class 'int'>`.
+
+```{python}
+x + y
+```
+
+*Explanation:* Mixing `float` and `int` promotes to `float`.
+
+### Basic operations
+
+```{python}
+x + y, x - y, x * y, x / y
+```
+
+*Explanation:* `+ - *` behave as expected. `/` is true division and returns a float.
+
+### Division operators
+
+```{python}
+1 / 2, 1 // 2
+```
+
+*Explanation:* `/` returns `0.5` (float). `//` is floor division: it rounds *down* to the nearest integer value; with integer inputs it returns `int`.
+
+```{python}
+3.7 // 2, type(3.7 // 2)
+```
+
+*Explanation:* Floor division with a float returns a *float* result (`1.0`) after flooring.
+
+```{python}
+-3.7 // 2
+```
+
+*Explanation:* Floor division rounds *down*: `-3.7 // 2 == -2.0` (since floor of `-1.85` is `-2`).
+
+### Floating-point precision
+
+```{python}
+0.1 + 0.2, 0.3, (0.1 + 0.2) == 0.3
+```
+
+*Explanation:* Binary representation causes tiny error. Direct equality often fails.
+
+```{python}
+from math import isclose
+isclose(0.1 + 0.2, 0.3)
+```
+
+*Explanation:* Use `math.isclose` for numeric comparisons.
+
+```{python}
+round(2/3, 4), round(1.234567, 2)
+```
+
+*Explanation:* `round(x, n)` is for presentation, not to change internal precision globally.
+
+### Special float values
+
+```{python}
+pos_inf = float('inf')
+neg_inf = float('-inf')
+nan = float('nan')
+pos_inf > 1e308, neg_inf < -1e308, nan == nan
+```
+
+*Explanation:* IEEE-754 defines infinities and NaN. NaN is *not equal* to anything, including itself.
+
+### Conversions and formatting
+
+```{python}
+float(3), int(3.9), int(-3.9)
+```
+
+*Explanation:* `float(int)` promotes to float. `int(float)` truncates toward zero.
+
+```{python}
+value = 1234.56789
+f"{value:.2f}", f"{value:,.1f}"
+```
+
+*Explanation:* Format floats with f-strings: fixed decimals and thousands separators.
+
+### Decimal for exact base-10 arithmetic (optional)
+
+```{python}
+from decimal import Decimal, getcontext
+getcontext().prec = 28
+Decimal("0.1") + Decimal("0.2") == Decimal("0.3")
+```
+
+*Explanation:* `Decimal` stores exact base-10 numbers. Use string inputs to avoid importing binary error. Suitable for money and exact decimal rules.
+
+Use this as your Booleans subsection.
+
+## Booleans
+
+*Booleans* represent truth values: `True` and `False`. They behave like integers for arithmetic (`True == 1`, `False == 0`) but are used for logic and control flow.
+
+Core operators:
+
+* Logical: `and`, `or`, `not` with *short-circuit* evaluation.
+* Comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` and *chained* comparisons like `0 <= x < 10`.
+* *Truthiness*: many objects act as true/false in conditionals. Empty collections (`''`, `[]`, `{}`, `set()`) and `0` and `None` are falsey; most others are truthy.
+
+### Creating and inspecting booleans
+
+```{python echo=false}
+x = True
+y = False
+```
+
+*Explanation:* Bind names to the two boolean values.
+
+```{python}
+type(x), type(y)
+```
+
+*Explanation:* Both are `<class 'bool'>`. In Python, `bool` is a subclass of `int`.
+
+### Booleans as integers
+
+```{python}
+x + y, x * 10, int(x), int(y)
+```
+
+*Explanation:* `True` acts like `1`, `False` like `0`. Arithmetic is often clearer if you convert with `int(...)` explicitly.
+
+### Logical operators
+
+```{python}
+x and y, x or y, not x, (not x) or y
+```
+
+*Explanation:* `and` is true only if both are true. `or` is true if either is true. `not` flips the value.
+
+### Comparisons and chaining
+
+```{python}
+12 == 13, 12 != 13, 3 < 5 <= 5 < 9
+```
+
+*Explanation:* Basic comparisons return booleans. Chaining avoids repeated variables and is evaluated left to right.
+
+### Truthiness of common objects
+
+```{python}
+bool(0), bool(1), bool(""), bool("text"), bool([]), bool([0]), bool(None)
+```
+
+*Explanation:* Empty sequences/collections and `0`/`None` are falsey. Non-empty values are truthy.
+
+### Using any/all
+
+```{python}
+any([False, False, True]), all([True, True, 1])
+```
+
+*Explanation:* `any` is true if any element is truthy. `all` is true only if all are truthy.
+
+### Comparing to None
+
+```{python}
+value = None
+value is None, value == None  # second form works but is not recommended
+```
+
+*Explanation:* Use `is`/`is not` for `None`, since `None` is a singleton object and identity is the correct check.
+
+
+## Strings
+
+*Strings* are sequences of Unicode characters. They are *immutable*. You can index, slice, iterate, and use string methods. Concatenation and repetition create new strings. Prefer *f-strings* for readable formatting.
+
+Key points:
+
+* Literals: single quotes `'...'`, double quotes `"..."`, and triple quotes for multiline `'''...'''` or `"""..."""`.
+* Immutability: operations produce *new* strings; the original is unchanged.
+* Common methods: `.lower()`, `.upper()`, `.capitalize()`, `.strip()`, `.split()`, `.join()`, `.replace()`, `.startswith()`, `.endswith()`.
+* Indexing and slicing: `s[i]`, `s[a:b:c]` with negative indices allowed.
+* Unicode: strings store text, not bytes; encode/decode at I/O boundaries.
+
+### Creating and inspecting
+
+```{python echo=false}
+s = "hello world"
+```
+
+*Explanation:* Bind `s` to a string.
+
+```{python}
+type(s), len(s)
+```
+
+*Explanation:* Confirm type `<class 'str'>` and length in characters.
+
+### Immutability
+
+```{python}
+sid_before = id(s)
+s2 = s.upper()
+sid_after = id(s), id(s2), s, s2
+```
+
+*Explanation:* Methods like `.upper()` return a *new* string. `id` shows different identities.
+
+### Indexing and slicing
+
+```{python}
+s[0], s[-1], s[0:5], s[6:], s[::2]
+```
+
+*Explanation:* First and last character; a slice; from index 6 to end; every second character.
+
+### Common methods
+
+```{python}
+"  Data  ".strip(), "Title".lower(), "make title".capitalize()
+```
+
+*Explanation:* Trim whitespace; change case; capitalize first letter.
+
+```{python}
+"a,b,c".split(","), "-".join(["a","b","c"])
+```
+
+*Explanation:* Split into a list on commas; join with `-`.
+
+```{python}
+"mississippi".replace("ss", "ß", 1)
+```
+
+*Explanation:* Replace first occurrence of a substring.
+
+```{python}
+"notebook.py".endswith(".py"), "Notebook.py".lower().endswith(".py")
+```
+
+*Explanation:* Suffix test; often combine with `.lower()` for case-insensitive checks.
+
+### Concatenation and repetition
+
+```{python echo=false}
+a, b = "hello", "world"
+```
+
+*Explanation:* Two short strings.
+
+```{python}
+a + " " + b, a * 3
+```
+
+*Explanation:* Concatenation builds a new string; `*` repeats the string.
+
+### Literals, quotes, and escapes
+
+```{python}
+"hello 'world'", 'hello "world"', "line1\nline2", "tab\tseparated"
+```
+
+*Explanation:* Mix quote styles; `\n` newline; `\t` tab.
+
+```{python}
+r"C:\Users\name\file.txt"
+```
+
+*Explanation:* Raw string literal `r"..."` treats backslashes literally. Useful for Windows paths and regexes.
+
+### Multiline strings
+
+```{python}
+para = """This is
+a multiline
+string."""
+para
+```
+
+*Explanation:* Triple quotes preserve newlines inside the string.
+
+### Membership and search
+
+```{python}
+"or" in "hello world", "world".find("or"), "hello".find("z")
+```
+
+*Explanation:* Membership test; `.find` gives index or `-1` if not found.
+
+### Formatting with f-strings
+
+```{python}
+name, score = "Ada", 98.765
+f"Student {name} scored {score:.1f}"
+```
+
+*Explanation:* f-strings evaluate expressions inside `{}` and support format specs.
+
+### Conversions and I/O boundaries
+
+```{python}
+str(3.14), int("42")
+```
+
+*Explanation:* Convert to and from strings. `int("42")` parses digits; `int("3.14")` would fail.
+
+```{python}
+data = "ƒøø"         # text
+b = data.encode("utf-8")
+b, b.decode("utf-8")
+```
+
+*Explanation:* Encode text to bytes for storage/transmission; decode bytes back to text.
+

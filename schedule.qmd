@@ -1,0 +1,37 @@
+---
+title: "Schedule"
+author: "Mark Andrews"
+execute:
+    error: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
+---
+
+
+## Introduction to Python (2 weeks)
+
+- Install and set up Python, Positron IDE, Quarto.
+- Introduction to core Python and Python for science (numpy, pandas, etc).
+
+
+## Introduction to machine learning with Python (2 weeks)
+
+- Scikit-learn pipelines, stratified splits, cross-validation, leakage control.
+- Logistic regression and naive Bayes; metrics: ROC-AUC, PR-AUC, confusion matrix.
+
+This section ends with a formative assessment: 4-page binary classifier with baseline comparison.
+
+## Introduction to deep learning (3 weeks)
+
+- PyTorch tensors, autograd, optimisers, and training loops.
+- MLP for tabular and 1D-CNN or small CNN for images or time series.
+- Regularisation, early stopping, and learning-curve diagnostics; non-DL baseline comparison.
+
+## LLMs / GPTs (3 weeks)
+
+- Tokenisation, byte/BPE vocab training, causal masking, and next-token loss.
+- Microscopic GPT implementation and training on a small corpus.
+- Use as a binary text classifier via fine-tuned head or label-probability scoring; held-out evaluation and error analysis.

@@ -1,0 +1,153 @@
+---
+title: "Assessment Specifications, Description, Grading Criteria"
+author: "Mark Andrews"
+execute:
+    error: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
+---
+
+* Module Title: PSYC40930: Python for Behavioural Data Science & Machine Learning
+* Module Code: PSYC40930
+* Module Leader: Mark Andrews
+* Element name: Report
+* Element no: 1.
+* Weighting: 100 per cent.
+* Page limit (excl. references and appendices): 12 pages total, 4 pages per part.
+* Submission deadline: 16 Janurary, 2025
+* Provisional grade and feedback: 6 February, 2025
+
+## Description
+
+You will complete three end-to-end machine learning or deep learning analyses using Python and write one report with a maximum of four pages per analysis part.
+You will choose datasets that are relevant to behavioural science and that are not used in class.
+You will ensure that each part is self-contained, reproducible (using Quarto; see below), and clearly reported.
+
+
+Part 1. Supervised machine learning with a binary classifier on tabular data (2D rectangular matrix X with N rows and K columns of features, plus a separate binary target y ∈ {0,1}).
+Part 2. Deep learning (not LLM) on a modality that justifies neural networks, such as images or high-dimensional tabular data (not necessarily binary targets).
+Part 3. A GPT-style deep learning language model built and trained from scratch and then used as a (e.g., but not necessarily, binary) text classifier via fine-tuning or label-probability scoring.
+
+For each part you will state a focused research question of relevance to psychology or a closely related field.
+For each part you will describe the dataset, define the target, justify your methods, report results with appropriate metrics and figures, and provide a brief interpretation.
+You may use only data that you are freely permitted to use and you must cite all sources.
+
+## Requirements for each part
+
+* You will describe the question you address in one short paragraph with minimal context and a few references.
+* You will describe the dataset, its source, variables, units, and sample size, and include a URL or DOI where possible.
+* You will provide concise descriptive statistics and basic visualizations to understand the data.
+* You will specify the model in precise technical and mathematical terms, including formulas or architecture details as appropriate.
+* Use nested cross-validation for testing and hyper-parameter tuning (if compute is limited, do one 80/20 stratified train/test split, tune with k-fold CV on the 80%, then evaluate once on the 20%).
+* Report classifier metrics (such as ROC-AUC, PR-AUC) and compare performance to a simple baseline/null model.
+
+## Part-specific guidance
+
+### Part 1
+
+You will build at least two models including a transparent baseline such as logistic regression and one non-linear classifier such as random forest or gradient boosted decision trees.
+You will handle preprocessing using a reproducible pipeline that includes imputation, scaling where needed, encoding, and leakage checks.
+You will use proper validation such as a train-validation-test split or nested cross-validation, and you will report classifier matrix. 
+
+### Part 2
+
+You will select an architecture that matches the modality such as MLP for tabular, 1d conv-net or recurrent net for time-series, or conv-net for images.
+You will report the architecture, parameter count, optimizer, learning rate schedule, batch size, early stopping, and random seed.
+You will compare against a strong non-DL baseline from Part 1 where appropriate and you will show training and validation learning curves over training epochs.
+
+### Part 3
+
+You will implement a small causal language model in PyTorch with your own tokenizer and a context length of your choice within modest limits.
+You will train the tiny model from scratch on a legally sharable corpus, then use it for binary text classification either by fine-tuning a small head or by label-probability scoring with a prompt template.
+You will evaluate on a held-out set with accuracy and F1 and you will compare to a non-neural baseline such as TF-IDF with logistic regression.
+
+
+## Page limits
+
+There is no word limit, but there is a strict page limit of four pages per part and twelve pages overall, excluding references and appendices.
+
+## Report and submission format
+
+You must submit a single zip archive (ideally an archive export from a Git repository; with the Git repo also available on a hosting platform like GitHub) that contains exactly one Quarto .qmd source file for the report, the rendered html and optionally pdf, all necessary Python source files, all data files or a data acquisition script, and any supplementary files such as a bibliography.
+Your work must be reproducible in full from the Quarto source and included files.
+Code, figures, and narrative for all parts must be in the Quarto file and must knit without manual intervention.
+You must include an environment file such as requirements.txt or environment.yml and you must fix random seeds where applicable.
+You must include a short note that discloses any AI assistance used for text or code and you must ensure originality of your submission.
+
+## Where to find datasets
+
+You will choose your own dataset for each of the three parts and you will not reuse class datasets.
+You are encouraged to explore the Open Science Framework and other large open-science data repositories.
+You may also search for psychology datasets using scholarly repositories and general search strategies and you must verify licensing.
+
+## Academic integrity
+
+You must follow university policies on academic integrity and proper citation.
+You must write your own report and code and you must not share solutions.
+You must disclose any AI tools used for drafting or debugging and you must validate any generated material.
+
+## Marking and feedback
+
+We will assess understanding of theory, quality of methodology, strength of validation and comparison, clarity of interpretation, and reproducibility and report quality.
+High grades require learning that goes beyond what is explicitly taught in class.
+
+## Grading matrix
+
+| Criterion                            | Distinction                                                                                                                                                                                                                                                  | Commendation                                                                                                                                     | Pass                                                                                                                                                             | Fail                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Problem framing and data stewardship | The question is clear, well motivated, and relevant to behavioural science, and the dataset is well documented with correct licensing, provenance, and a data-availability statement consistent with open-science practice.                                  | The question is clear and relevant, and the dataset is documented with minor omissions in licensing, provenance, or availability.                | The question is somewhat vague, and dataset documentation lacks important details about source, licensing, or availability.                                      | The question is missing or unclear, and the dataset is not described or its use is not permitted.                    |
+| Methodology and model specification  | Methods are appropriate and justified, models are specified precisely, and preprocessing and leakage controls are correct and fully transparent, with seeds, parameters, and configuration recorded for reproducibility.                                     | Methods are mostly appropriate with reasonable justification and minor specification gaps; most parameters and seeds are recorded.               | Methods are partially appropriate with notable gaps or weak justification; parameter choices and seeds are inconsistently recorded.                              | Methods are incorrect, poorly matched to the question, or not reported in a way that others can reproduce.           |
+| Validation and comparison            | Splits or cross-validation are correct and fully reported, metrics are appropriate, calibration is addressed when relevant, and baselines are strong and fairly compared using published code so results are reproducible.                                   | Validation is sound with minor issues and baselines are present, with most evaluation details and code available.                                | Validation has weaknesses and baselines are minimal; important evaluation details or code are missing.                                                           | No valid evaluation is provided or comparisons are not documented well enough to reproduce.                          |
+| Interpretation and error analysis    | Results are interpreted carefully, limitations are acknowledged, and error patterns are analyzed with clear, reproducible examples and code so that findings can be independently verified.                                                                  | Results are interpreted correctly with some attention to limits and errors, with partial code or examples provided.                              | Interpretation is brief and misses key caveats and errors, and reproducible examples are limited.                                                                | Interpretation is absent or incorrect, and error analysis is not provided in a reproducible form.                    |
+| Reproducibility and report quality   | The Quarto project rebuilds cleanly from a fresh environment using supplied instructions; code, data access, and configuration are organized in an open, transparent structure with versioned dependencies and clear README; the report stays within limits. | The project mostly rebuilds with minor issues; most assets and instructions for open, transparent reproduction are present; the report is clear. | Rebuild requires manual fixes; instructions or environment capture are incomplete; organization hinders transparent reproduction; the report has clarity issues. | Materials are incomplete, not runnable from clean setup, or missing key elements for open and reproducible analysis. |
+
+## Checklist for students
+
+This checklist is not exhaustive. It is to help you avoid common omissions.
+
+* Packaging
+  You created a single zip that contains the .qmd, the rendered html and optionally pdf, all Python source files, data files or a fetch script, an environment file (requirements.txt or environment.yml), and a README with exact commands to reproduce.
+
+* Reproducibility
+  You fixed random seeds and recorded package versions.
+  You listed the command to recreate the environment and to render the report.
+  You avoided data leakage by fitting all preprocessing inside cross-validation on the training split.
+
+* Data and splits
+  You cited the data source and license.
+  You described N, features, target, and any exclusions.
+  You used stratified splits for classification and recorded the random\_state.
+  You documented whether you used a single 80/20 split with inner CV or nested CV.
+
+* Part 1 (binary classifier on tabular)
+  You included a simple baseline (for example majority class or logistic regression).
+  You tuned hyperparameters via cross-validation on the training data only.
+  You reported ROC-AUC and PR-AUC, plus a thresholded confusion matrix with precision, recall, and F1.
+  You addressed class imbalance via stratification, class weights, or resampling.
+  You implemented preprocessing as a single pipeline (imputation, encoding, scaling) fitted inside CV.
+
+* Part 2 (non-LLM deep learning)
+  You specified the architecture, parameter count, optimizer, learning-rate schedule, batch size, and early-stopping rule.
+  You showed training and validation learning curves versus epoch.
+  You compared against a non-DL baseline and stated the random seed.
+
+* Part 3 (tiny GPT as classifier)
+  You described the tokenizer training, vocabulary size, and context length.
+  You trained the model from scratch on a sharable corpus and reported training and validation loss curves.
+  You classified via fine-tuning a small head or via label-probability scoring and explained which.
+  You evaluated on a held-out set with accuracy and F1 and compared to a TF-IDF + logistic regression baseline.
+
+* Figures and tables
+  You labeled axes and units, used readable fonts, and added concise captions.
+  You reported cross-validation means and standard deviations with the number of folds.
+  You limited significant digits to what the data support.
+
+* Report constraints
+  You stayed within the page limits, moved extras to an appendix, and kept the narrative clear.
+
+* Integrity and disclosure
+  You included an AI-assistance disclosure note for any generated text or code.
+
