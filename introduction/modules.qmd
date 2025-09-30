@@ -1,0 +1,80 @@
+---
+title: "Python Modules and Importing"
+jupyter: python3
+execute:
+    error: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
+---
+
+A module is a `.py` file with code you can reuse. You import it to access its names.
+
+---
+
+## Importing standard library modules
+
+### `import module`
+
+```{python}
+import math
+
+(math.pi, math.sqrt(16))
+```
+
+### `from module import name`
+
+```{python}
+from statistics import mean, median
+
+data = [2, 3, 5, 7]
+(mean(data), median(data))
+```
+
+### Aliases with `as`
+
+```{python}
+import random as rnd
+
+rnd.seed(0)
+rnd.randint(1, 6)
+```
+
+## Your own module in one file
+
+Create `mymath.py` in the working directory and import it.
+
+```python
+# save this in file mymath.py
+
+def square(x):
+    return x ** 2
+
+def cube(x):
+    return x ** 3
+
+def power(x, k=2):
+    return x ** k
+```
+
+```{python}
+import mymath
+(mymath.square(5), mymath.cube(3), mymath.power(2, 10))
+```
+
+Selective import:
+
+```{python}
+from mymath import power
+power(9)
+```
+
+Reload during development:
+
+```python
+import importlib
+importlib.reload(mymath)  # picks up changes to mymath.py
+```
+

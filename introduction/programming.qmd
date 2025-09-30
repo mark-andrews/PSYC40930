@@ -1,0 +1,136 @@
+---
+title: "Introduction to Programming in Python"
+jupyter: python3
+execute:
+    error: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
+---
+
+This provides an introduction to programming in Python.
+We cover iterations, conditionals, function, and object-oriented programming using some simple examples.
+
+## 1) Iterations
+
+A for loop lets you do the same step for every item in a collection, one after another.
+Think “for each thing in this list, do X,” like adding them up or printing their names.
+
+```{python}
+# iterate through a list of integers
+# print each one
+
+primes = [2, 3, 5, 7, 11, 13, 17, 19]
+for p in primes:
+    print(p)
+```
+
+```{python}
+# sum up a list of integers
+s = 0
+for p in primes:
+    s += p
+```
+
+```{python}
+s
+```
+
+```{python}
+# create a list of the squares
+# of another list
+primes_squared = []
+for p in primes:
+    primes_squared.append(p ** 2)
+```
+
+```{python}
+primes_squared
+```
+
+
+## 2) Conditionals
+
+Conditionals let your program make choices. For example, *If this is true, do A; otherwise do B.* etc.
+
+```{python}
+if len(primes) < 4:
+    print('That is a short list.')
+else:
+    print('Not short')
+```
+
+```{python}
+if len(primes) < 2:
+    print('Short')
+elif len(primes) < 3:
+    print('Still a bit short')
+elif len(primes) < 4:
+    print('Medium length')
+else:
+    print("Big list")
+```
+
+## 3) Functions
+
+Functions bundle steps into a named tool. You give inputs, it does the work, and often gives a result back.
+
+```{python}
+def square(x):
+    return x ** 2
+
+def cube(x):
+    return x ** 3
+```
+
+```{python}
+square(4) 
+```
+
+```{python}
+cube(3) 
+```
+
+```{python}
+def power(x, k=2):
+    """Raise x to the k power. Default k=2 (square)."""
+    return x ** k
+```
+```{python}
+power(5)
+```
+
+```{python}
+power(2, 10) 
+```
+
+## 4) Object-oriented programming (classes)
+
+Object oriented programming classes define our own kinds of new objects with data and actions together. 
+A class is the blueprint; an object is an instance of that blueprint.
+
+```{python}
+class Circle:
+    def __init__(self, r = 1.0):
+        self.r = r
+
+    def circumference(self):
+        return 3.14 * self.r * 2
+
+    def area(self):
+        return 3.14 * self.r ** 2
+```
+
+```{python}
+# default radius = 1.0
+c1 = Circle()
+(c1.circumference(), c1.area())
+```
+
+```{python}
+# custom radius
+c2 = Circle(2.5)
+(c2.circumference(), c2.area())
+```
