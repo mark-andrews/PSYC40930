@@ -1,0 +1,195 @@
+---
+title: "Binary classification on images: Part 0"
+format: html
+execute:
+  echo: true
+jupyter: python3
+---
+`
+
+## Imports and metrics
+
+Bring in scikit-learn datasets, model selection helpers, the classifier, preprocessing, and standard evaluation metrics. `matplotlib` is for quick visualization.
+
+```{python}
+# import sklearn
+from sklearn import datasets
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn import preprocessing
+
+from sklearn.metrics import (confusion_matrix,
+                             precision_score,
+                             recall_score,
+                             f1_score,
+                             accuracy_score,
+                             balanced_accuracy_score,
+                             roc_auc_score,
+                             roc_curve)
+
+from matplotlib import pyplot as plt
+```
+
+---
+
+## Load MNIST and make a binary target
+
+Fetch MNIST as a feature matrix `X` (each 28×28 image flattened to length 784). Build a binary label `y` that is `True` for the digit “8” and `False` otherwise.
+
+```{python}
+# Get handwriten digits data
+mnist = datasets.fetch_openml('mnist_784', version=1, as_frame=False)
+X = mnist['data']
+y = (mnist['target'] == '8')  # True for digit 8, else False
+```
+
+---
+
+## Helper to visualize a digit
+
+`show_digit` reshapes a 784-length row back to 28×28 and renders it. Useful for sanity checks.
+
+```{python}
+def show_digit(input_data, i=0):
+    'Render image represented by row i in input_data matrix'
+    return plt.imshow(
+        input_data[i].reshape(28, 28), cmap = plt.cm.binary, interpolation = 'nearest'
+    )
+
+# view any digit
+show_digit(input_data=X, i=101)
+```
+
+
+## Train/test split
+
+Split into training and test sets. The test set simulates unseen data for final evaluation.
+
+```{python}
+# Test/train split
+X_train, X_test, y_train, y_test = train_test_split(X, 
+                                                    y,
+                                                    test_size=0.2,
+                                                    random_state=101,
+                                                    stratify=y)
+```
+
+---
+
+## Proper scaling for modeling
+
+We call `fit_transform` on `X_train` to learn the scaling stats, then apply them. 
+We call `transform` on `X_test` to reuse those learned stats without re-estimating anything.
+
+* `fit_transform(X_train)` computes per-feature mean $\mu_j$ and scale $\sigma_j$ on training data only, stores them in `scaler.mean_` and `scaler.scale_`, then returns
+$$
+X'_{ij}=\frac{X_{ij}-\mu_j}{\sigma_j}.
+$$
+* `transform(X_test)` uses the same $(\mu_j,\sigma_j)$ from training to standardize test. 
+
+No refit. No peeking at test. This avoids leakage and keeps the feature space consistent for deployment.
+
+Why not `preprocessing.scale(X)` here?
+
+That function computes stats on whatever array you pass each time.
+If used before splitting or on test, it leaks or makes train/test scales differ. `StandardScaler` + `fit`/`transform` enforces the correct workflow.
+
+What is *leakage*?
+It is using information from the validation/test set to build the model *or* its preprocessing.
+It makes evaluation optimistically biased.
+
+Two bad patterns and why they matter:
+
+1. Fit scaler on all data, then split.
+   Test data influenced the learned means/SDs, which then influence the fitted weights. Your “test” is no longer independent.
+
+2. Fit a fresh scaler on X_test.
+   Not leakage, but wrong. You changed units at test time. The model was trained on
+
+Rule: fit transformers on training data only, then transform both train and test with those fixed parameters. 
+Use a `Pipeline` so CV enforces this per fold.
+
+```{python}
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler(with_mean=False)  # efficient for high-dimensional image rows
+X_train = scaler.fit_transform(X_train)   # fit on train, transform train
+X_test  = scaler.transform(X_test)        # transform test with the same stats
+```
+
+We can look at a scaled image as follow:
+
+```{python}
+show_digit(input_data=X_train, i=101)
+```
+
+---
+
+## Fit logistic regression
+
+Train a logistic regression classifier that models ( P(y=1\mid x) ). 
+`max_iter` is raised to ensure convergence on this dataset.
+
+```{python}
+# Fit logistic regression model
+logreg = LogisticRegression(max_iter = 10000)
+result = logreg.fit(X_train, y_train)
+```
+
+---
+
+## Class predictions and basic metrics
+
+Predict class labels on the test set and compute standard metrics.
+With class imbalance, include `balanced_accuracy` which averages TPR and TNR.
+
+```{python}
+# Get predictions for test set
+y_test_classification = logreg.predict(X_test)
+
+# Confusion matrix
+# C_{i, j} := no. of obs in i and predicted to be in j.
+confusion_matrix(y_test, y_test_classification)
+confusion_matrix(y_test, y_test_classification, labels=[True, False])
+
+# Recall: TP / (TP + FN)  — how many actual positives are caught
+recall_score(y_test, y_test_classification)
+
+# Precision: TP / (TP + FP) — how often a positive prediction is correct
+precision_score(y_test, y_test_classification)
+
+# F1: harmonic mean of precision and recall
+f1_score(y_test, y_test_classification)
+
+# Accuracy: overall fraction correct
+accuracy_score(y_test, y_test_classification)
+(y_test == y_test_classification).mean()
+
+# Balanced accuracy: mean recall of positive and negative classes
+balanced_accuracy_score(y_test, y_test_classification)
+```
+
+---
+
+## ROC curve and AUC
+
+Use predicted probabilities for the positive class to trace the ROC curve (TPR vs FPR over thresholds). 
+
+```{python}
+# Receiver operating characteristic (ROC) curve
+y_test_classification_prob = logreg.predict_proba(X_test)[:, 1]
+
+# fpr v tpr at each threshold
+fpr, tpr, thresholds = roc_curve(y_test, y_test_classification_prob)
+plt.figure()
+plt.plot(fpr, tpr, 'b')
+plt.xlabel('FPR')
+plt.ylabel('TPR')
+plt.title('ROC curve')
+```
+
+The `roc_auc_score` is the area under this ROC curve.
+In particular, it provides the probability that the model ranks a randomly chosen positive example above a randomly chosen negative one.
+```{python}
+roc_auc_score(y_test, y_test_classification_prob)
+```

@@ -1,0 +1,112 @@
+---
+title: "Binary classification on images: Part 2"
+format: html
+execute:
+  echo: true
+jupyter: python3
+---
+
+## What the models are
+
+- Decision tree splits the data with simple yes or no questions on single features to reach a class.
+- SVM linear draws a straight boundary in the feature space that separates classes with the widest gap it can.
+- SVM RBF draws a flexible, curved boundary by comparing points with a similarity function.
+- Logistic regression learns a straight boundary and outputs a probability for the positive class.
+- KNN predicts by looking at the labels of the closest training images and taking a vote.
+
+---
+
+## Data and binary target
+
+Load MNIST and create a boolean label for the digit eight.
+We keep features as flattened pixel rows because our models can handle them directly.
+
+```{python}
+from sklearn import datasets
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedKFold, cross_validate
+
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import Perceptron, LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+
+# --- data ---
+mnist = datasets.fetch_openml('mnist_784', version=1, as_frame=False)
+X = mnist['data']
+y = (mnist['target'] == '8')
+```
+
+---
+
+## Cross-validation and metrics
+
+Use stratified ten-fold splits so each fold keeps the class balance.
+Report accuracy for completeness and add metrics that behave better with imbalance.
+
+```{python}
+# --- 10-fold CV + metrics ---
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
+
+scoring = {
+    'acc': 'accuracy',
+    'bal_acc': 'balanced_accuracy',
+    'f1': 'f1',
+    'roc_auc': 'roc_auc',
+    'precision': 'precision',
+    'recall': 'recall',
+}
+```
+
+---
+
+## Pipeline helper
+
+Scale features for distance and dot-product based models and skip scaling for trees.
+`with_mean=False` avoids unnecessary densification and keeps things fast.
+
+```{python}
+def pipe(est, scale):
+    if scale:
+        return Pipeline([
+            ('scaler', StandardScaler(with_mean=False)),
+            ('clf', est)
+        ])
+    else:
+        return Pipeline([('clf', est)])
+```
+
+---
+
+## Define models
+
+Keep the SVMs commented out for now to keep runtime short.
+Include a simple tree, logistic regression, and KNN as quick baselines.
+
+```{python}
+models = {
+    'decision_tree': pipe(DecisionTreeClassifier(random_state=0), scale=False),
+    # 'svm_linear':    pipe(SVC(kernel='linear', random_state=0), scale=True),
+    # 'svm_rbf':       pipe(SVC(kernel='rbf', random_state=0),    scale=True),
+    'log_reg':       pipe(LogisticRegression(max_iter=10000, random_state=0),  scale=True),
+    'knn_5':         pipe(KNeighborsClassifier(n_neighbors=5),                 scale=True),
+}
+```
+
+---
+
+## Cross-validate and summarize
+
+Evaluate each pipeline across folds with the same splitter and metrics.
+Print mean and standard deviation so results are easy to compare.
+
+```{python}
+for name, model in models.items():
+    res = cross_validate(model, X, y, cv=cv, scoring=scoring, n_jobs=-1, return_train_score=False)
+    print(f'\n{name}')
+    for k in scoring:
+        m = res[f'test_{k}'].mean()
+        s = res[f'test_{k}'].std(ddof=1)
+        print(f'  {k:>8}: {m:.4f} ± {s:.4f}')
+```

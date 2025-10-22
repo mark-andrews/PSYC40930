@@ -1,0 +1,98 @@
+---
+title: "Binary classification on images: Part 1"
+format: html
+execute:
+  echo: true
+jupyter: python3
+---
+
+## Data and binary target
+
+Load MNIST as a matrix of flattened images.
+Build a boolean label that is true for the digit eight and false otherwise.
+
+```{python}
+from sklearn import datasets
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold, cross_validate
+
+# --- data ---
+mnist = datasets.fetch_openml('mnist_784', version=1, as_frame=False)
+X = mnist['data']
+y = (mnist['target'] == '8')  # True for digit 8, else False
+```
+
+---
+
+## Pipeline to prevent leakage
+
+Bundle scaling and the classifier so that scaling is fit only on the training folds.
+Use `with_mean=False` to avoid densifying large high-D arrays.
+
+```{python}
+# --- model in a pipeline to avoid leakage ---
+pipe = Pipeline([
+    ('scaler', StandardScaler(with_mean=False)),  # sparse-like high-D; keep speed
+    ('clf', LogisticRegression(max_iter=10000))
+])
+```
+
+---
+
+## Stratified K-fold splitter
+
+Use ten folds with shuffling and a fixed seed.
+Stratification preserves the class ratio in every fold.
+
+```{python}
+# --- 10-fold stratified CV ---
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
+```
+
+---
+
+## Metrics to score
+
+Report accuracy for completeness but rely on imbalance-robust metrics too.
+Add balanced accuracy, F1, ROC AUC, precision, and recall.
+
+```{python}
+# --- metrics: accuracy is reported, but rely on imbalance-robust ones ---
+scoring = {
+    'acc': 'accuracy',
+    'bal_acc': 'balanced_accuracy',
+    'f1': 'f1',
+    'roc_auc': 'roc_auc',
+    'precision': 'precision',
+    'recall': 'recall',
+}
+```
+
+---
+
+## Cross-validate the pipeline
+
+Evaluate the pipeline across all folds in parallel.
+Return one score per metric per fold.
+
+```{python}
+# ===== cross validate 
+res = cross_validate(pipe, X, y, cv=cv, scoring=scoring, n_jobs=-1)
+```
+
+---
+
+## Summarize fold scores
+
+Compute mean and standard deviation over folds for each metric.
+Print a compact table for quick comparison.
+
+```{python}
+# --- report mean ± std ---
+for k in scoring:
+    mean = res[f'test_{k}'].mean()
+    sd = res[f'test_{k}'].std(ddof=1)
+    print(f'{k:>10}: {mean:.4f} ± {sd:.4f}')
+```
