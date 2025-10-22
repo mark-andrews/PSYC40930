@@ -1,9 +1,13 @@
 ---
 title: "Binary classification on images: Part 1"
-format: html
 execute:
   echo: true
 jupyter: python3
+format:
+  html:
+    toc: true
+    toc-location: right
+    embed-resources: true
 ---
 
 ## Data and binary target
