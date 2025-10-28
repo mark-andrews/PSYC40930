@@ -1,0 +1,253 @@
+---
+title: "Introduction to Artificial Neural Networks"
+subtitle: "A conceptual introduction"
+date: "29 October 2025"
+format:
+  html:
+    toc: true
+    number-sections: false
+    embed-resources: true
+  revealjs:
+    theme: simple
+    slide-number: true
+    controls: true
+    toc: false
+    incremental: false
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+mermaid:
+  theme: default
+  themeVariables:
+    clusterBkg: transparent
+    clusterBorder: "#999999"
+---
+
+```{r setup, include=FALSE}
+#| echo: false
+library(tidyverse) 
+```
+
+## What is an artificial neural network?
+
+- An artificial neural network (ANN) is a trainable mathematical function that maps inputs to outputs.
+- The function is built from simple computational units called artificial neurons that are connected in layers.
+- Each neuron combines its inputs using learned weights, then applies a non-linear activation to produce an output.
+- *Almost all artificial intelligence (AI) systems today are ANNs.*
+
+
+## Biological neurons
+
+- Dendrites receive chemical signals at synapses; the soma integrates these inputs into a membrane potential.
+- If the potential crosses a threshold, the neuron emits an all‑or‑none action potential down the axon.
+- At axon terminals, neurotransmitters are released to influence other neurons; synaptic strengths change with plasticity.
+
+![](Neuron3.png){fig-alt="Schematic of a biological neuron: dendrites, soma, axon, synapses" fig-align="center" width="65%"}
+
+## A minimal artificial neuron
+
+- A single neuron takes numbers as inputs $x$ and produces one number as output.
+- The weights $w$ control how strongly each input influences the output.
+- The activation function $\phi()$ is usually nonlinear.
+
+$$
+\begin{split}
+\text{output} &= \phi\big( w_1 x_1 + w_2 x_2 + \cdots + w_K x_K + b \big) \\
+              &= \phi\left(b + \sum_{k=1}^{K} w_k x_k\right)
+\end{split}
+$$
+
+## Diagram of a single neuron
+
+- Inputs are combined into a weighted sum, adjusted by a bias, and then passed through an activation to produce the output.
+- The same pattern is repeated across many neurons to form layers.
+
+```{mermaid}
+%%| fig-align: center
+graph LR
+  x1([x1]) -->|w1| S
+  x2([x2]) -->|w2| S
+  x3([x3]) -->|w3| S
+  S["$$b + \sum_{k=1}^K w_k x_k$$"] --> A["$$\phi()$$"]
+  A --> y([output])
+```
+
+
+
+## The summation rule in practice
+
+- Inputs aligned with positive weights push the neuron’s output upward, while inputs with negative weights pull it downward.
+- The bias sets the level the neuron tends to output when inputs are near zero.
+- Together the weights and bias define a decision boundary in the space of inputs.
+
+## Activation functions $\phi$ at a glance
+
+The activation function makes the function modelled by network non-linear.
+
+```{r}
+#| echo: false
+#| out-width: 100%
+#| fig-align: center 
+
+gelu <- function(x) {
+  x * pnorm(x)
+}
+ 
+tibble(x = seq(-5, 5, length.out = 100)) |>
+  mutate(
+    sigmoid = 1 / (1 + exp(-x)),
+    tanh = tanh(x),
+    relu = pmax(0, x),
+    gelu = gelu(x)
+  ) |> 
+    pivot_longer(cols = -x, names_to = "activation", values_to = "value") |>
+  ggplot(aes(x = x, y = value, color = activation)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Common Activation Functions",
+    x = "Input",
+    y = "Output",
+    color = "Activation"
+  ) +
+  theme_minimal() +
+  facet_wrap(~activation, nrow = 1, scales = "free_y") +
+  theme(legend.position = "none")
+```
+
+## Why the activation matters for learning
+
+- Without activation functions, a stack of layers would collapse to a single linear transformation that cannot model curves.
+- Non-linear activations allow networks to fit bends, thresholds, and interactions that are essential in real data.
+- Appropriate activations also help gradients flow during learning so the network can be trained effectively.
+
+## From neuron to network
+
+- A layer contains many neurons that look at the same inputs in parallel.
+- The outputs of one layer become the inputs to the next layer, allowing the network to build up more complex representations.
+
+```{mermaid}
+%%| fig-align: center
+flowchart LR
+  subgraph Input
+    x1((x1))
+    x2((x2))
+  end
+  subgraph Hidden
+    h1((h1))
+    h2((h2))
+  end
+  subgraph Output
+    y((y))
+  end
+
+  x1 --> h1
+  x1 --> h2
+  x2 --> h1
+  x2 --> h2
+
+  h1 --> y
+  h2 --> y
+
+```
+
+## From neuron to network (maths)
+
+- Assuming one "hidden" layer of $K$ neurons, and $J$ inputs, the network output is:
+$$
+y = \phi\left(b_y + \sum_{k=1}^{K} v_k h_k\right),
+$$
+where each hidden neuron output $h_k$ is
+$$
+h_k = \phi\left(b_h + \sum_{j=1}^{J} w_{jk} x_j\right).
+$$
+
+## Deep learning vs artificial neural networks
+
+- Artificial neural networks (ANNs) are the general family of models built from interconnected computational “neurons” that map inputs to outputs.
+- Deep learning refers to training ANNs with multiple stacked (deep) layers and the practical ecosystem --- large data, specialised architectures (CNNs, RNNs, transformers), optimisation techniques, and hardware --- that enables hierarchical representation learning.
+- In short: deep learning ⊂ ANNs — deep learning denotes deep, large-scale ANNs plus the methods and infrastructure that make them effective.
+
+
+## Single-layer era: perceptrons
+
+* In 1958 Frank Rosenblatt introduced the perceptron as a simple neuron model that could learn linear decision boundaries from labeled examples.
+* Early experiments on image recognition created excitement because the perceptron demonstrated that machines could adapt their internal parameters from data.
+* Researchers soon recognized that single-layer perceptrons could not represent functions like exclusive-or, which hinted at the need for multilayer architectures.
+
+## The “dark ages” after Minsky and Papert
+
+* In 1969 Marvin Minsky and Seymour Papert published a rigorous critique showing fundamental limits of perceptrons, which discouraged funding and interest.
+* Through the 1970s and early 1980s, symbolic approaches dominated artificial intelligence while connectionist methods received limited attention.
+* Small pockets of research persisted, but progress slowed because training deeper networks remained computationally and algorithmically difficult.
+
+## Backpropagation and the return of learning in multilayer nets
+
+* In 1986 David Rumelhart, Geoffrey Hinton, and Ronald Williams popularized error backpropagation, which made it practical to train multilayer feedforward networks.
+* Yann LeCun and colleagues demonstrated convolutional neural networks with gradient descent for handwritten digit recognition, linking neural networks to computer vision.
+* Despite these advances, compute, data, and hardware constraints limited performance on large real-world problems for another two decades.
+
+## Deep learning renaissance
+
+* Around 2006 Geoffrey Hinton, Ruslan Salakhutdinov, Yoshua Bengio, and others showed that layer-wise pretraining could initialize deep networks effectively.
+* In 2012 Alex Krizhevsky, Ilya Sutskever, and Geoffrey Hinton won the ImageNet Large Scale Visual Recognition Challenge with AlexNet, powered by GPUs and ReLU activations.
+* Rapid progress followed across speech, vision, and language as larger datasets, better regularization, and improved architectures unlocked new capabilities.
+
+## Attention and the Transformer
+
+* In 2017 Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, and colleagues introduced the Transformer architecture with the principle “attention is all you need.”
+* Transformers replaced recurrent computation with self-attention, enabling efficient parallel training and superior performance on sequence modeling tasks.
+* Subsequent models such as BERT, GPT, and ViT scaled data and parameters, establishing Transformers as a general-purpose foundation across modalities.
+
+## The current golden age
+
+* Large-scale pretraining, transfer learning, and instruction tuning have produced versatile models that support research, industry, and education at unprecedented scale.
+* Advances in optimization, tooling, and hardware have turned neural networks into an engineering discipline with reproducible pipelines and strong empirical baselines.
+* Ongoing debates about safety, evaluation, and societal impact now accompany technical progress, as researchers balance innovation with responsible deployment.
+
+
+## How learning works
+
+- First, the network starts with random weights and biases.
+- Then it computes outputs for a batch of inputs and measures error with a loss function that compares outputs to targets.
+- Next, gradients indicate how each weight should change to reduce the loss, and the parameters are nudged in that direction.
+- This cycle repeats over many passes until performance on held-out data stops improving.
+
+## Diagram of the learning loop (backpropagation)
+
+- The network produces predictions from inputs, the loss measures the gap to targets, gradients are computed, and the weights are updated.
+- Repeating this loop gradually improves performance if the task is learnable and the data are informative.
+
+```{mermaid}
+flowchart LR
+  A[inputs] --> B[network]
+  B --> C[predictions]
+  D[targets] --> E[loss]
+  C --> E
+  E --> F[compute gradients]
+  F --> G[update weights]
+  G --> B
+```
+
+
+## Overfitting in simple terms
+
+- A network can memorise training examples instead of learning general patterns that transfer to new data.
+- Performance on validation data helps detect this because accuracy on unseen data can decline while training accuracy keeps rising.
+- Simpler architectures, regularisation techniques, and more diverse data reduce overfitting.
+
+## What to remember
+
+- A network is a flexible function built from many simple units arranged in layers.
+- Each unit adds weighted inputs, shifts the result with a bias, and applies a non-linear activation.
+- Learning is an iterative process that reduces a loss on examples by adjusting the weights and biases with gradient information.
+- Depth, non-linearity, and sufficient data provide the power seen in modern applications.
+
+## Further reading
+
+* Bishop, C. M., & Bishop, H. (2023). *Deep learning: Foundations and concepts*. Springer. ([SpringerLink][1])
+* Prince, S. J. D. (2023). *Understanding deep learning*. MIT Press. ([MIT Press][2])
+
+[1]: https://link.springer.com/book/10.1007/978-3-031-45468-4 "Deep Learning: Foundations and Concepts"
+[2]: https://mitpress.mit.edu/9780262377102/understanding-deep-learning/ "Understanding Deep Learning"

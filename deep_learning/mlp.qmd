@@ -1,0 +1,117 @@
+---
+title: "MNIST MLP with skorch"
+subtitle: "Training a simple neural network classifier"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: false
+---
+
+# Overview
+
+This Quarto document reproduces the Python script as a self-contained web page and explains each step. We will:
+
+- Load the MNIST dataset from OpenML.
+- Normalise pixel values and set appropriate data types.
+- Split the data into training and test sets.
+- Define a small multilayer perceptron (MLP) in PyTorch.
+- Train it using skorch's `NeuralNetClassifier` wrapper.
+- Evaluate accuracy on the test set.
+
+# Imports
+
+We import the libraries needed for data loading, splitting, model definition, and training.
+
+```{python}
+from sklearn.datasets import fetch_openml
+from sklearn.model_selection import train_test_split
+import torch
+from torch import nn
+from skorch import NeuralNetClassifier
+```
+
+# Load and preprocess the data
+
+We fetch MNIST (70,000 images of handwritten digits, 28×28). We scale pixel values to [0, 1], cast inputs to `float32` to match the model weights, and ensure targets are integer class labels.
+
+```{python}
+X, y = fetch_openml('mnist_784', version=1, as_frame=False, return_X_y=True)
+X = (X / 255.0).astype('float32')  # inputs as float32
+y = y.astype('int64')               # class indices as int64
+```
+
+# Train–test split
+
+We create a stratified split so class proportions are similar in train and test sets.
+
+```{python}
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=0
+)
+X_train.shape, X_test.shape
+```
+
+# Define the MLP model
+
+We define a small MLP that outputs logits for 10 classes. Using a function (a "factory") lets skorch build a fresh model when it initialises.
+
+```{python}
+def make_mlp():
+    return nn.Sequential(
+        nn.Linear(784, 256), nn.ReLU(),
+        nn.Linear(256, 128), nn.ReLU(),
+        nn.Linear(128, 10)
+    )
+
+model = make_mlp()
+model
+```
+
+# Wrap with skorch and configure training
+
+We use cross-entropy loss because the model outputs logits. The optimizer is Adam, and we train with mini-batches of 128 examples for 10 epochs on CPU.
+
+```{python}
+net = NeuralNetClassifier(
+    make_mlp,                    # factory builds a fresh model
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=10,
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    lr=1e-3,
+    device='cpu',
+)
+net
+```
+
+# Train the model
+
+We fit the network on the training data. Skorch prints a compact training log each epoch.
+
+```{python}
+net.fit(X_train, y_train)
+```
+
+# Evaluate on the test set
+
+We compute accuracy on held-out data. Returning the value in the last line displays it in this document.
+
+```{python}
+test_acc = net.score(X_test, y_test)
+test_acc
+```
+
+# Inspect learned parameters (optional)
+
+We can look at the shape of the first layer’s weights and confirm the model structure.
+
+```{python}
+w0_shape = net.module_[0].weight.detach().shape
+net.module_, w0_shape
+```
