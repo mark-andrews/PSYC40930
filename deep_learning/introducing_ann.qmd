@@ -13,6 +13,7 @@ format:
     controls: true
     toc: false
     incremental: false
+    embed-resources: true
 execute:
   echo: false
   warning: false
