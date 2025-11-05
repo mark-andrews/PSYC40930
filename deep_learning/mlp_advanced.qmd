@@ -1,0 +1,731 @@
+---
+title: "Advanced MLP Training"
+subtitle: "Overfitting, regularization, and model selection with skorch"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+---
+
+# Introduction
+
+In the basic MLP tutorial we trained a neural network and achieved good test accuracy. But we did not address the central challenge in deep learning: overfitting. A neural network can memorize training data perfectly while performing poorly on new data.
+
+This document teaches you to:
+
+1. Monitor overfitting with a validation set
+2. Recognize overfitting in learning curves
+3. Prevent overfitting with dropout and weight decay
+4. Stop training automatically when overfitting begins
+5. Tune hyperparameters systematically
+6. Compare your neural network to a simpler baseline
+
+We stay with MNIST and skorch so you can focus on these essential concepts rather than new tools.
+
+# Setup and Data Preparation
+
+## Imports
+
+We need the same core libraries as before, plus scikit-learn tools for callbacks, hyperparameter search, and baseline models. We also import matplotlib to visualize learning curves.
+
+```{python}
+from sklearn.datasets import fetch_openml
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+import torch
+from torch import nn
+from skorch import NeuralNetClassifier
+from skorch.callbacks import EarlyStopping
+from skorch.dataset import ValidSplit
+import matplotlib.pyplot as plt
+import numpy as np
+```
+
+## Load and preprocess MNIST
+
+We fetch MNIST exactly as before: scale pixels to [0, 1] and ensure the correct data types for PyTorch.
+
+```{python}
+X, y = fetch_openml('mnist_784', version=1, as_frame=False, return_X_y=True)
+X = (X / 255.0).astype('float32')
+y = y.astype('int64')
+```
+
+## Train–test split
+
+We hold out 20% for final testing. This split is untouched until the very end.
+
+```{python}
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=0
+)
+X_train.shape, X_test.shape
+```
+
+## Understanding the three-way split
+
+Important: We will actually create three splits, not two. This is a common point of confusion, so let's be explicit about what happens:
+
+### Initial split (the one we just did)
+
+`train_test_split` divides the 70,000 MNIST images into:
+
+- `X_train`: 56,000 images (80%)
+- `X_test`: 14,000 images (20%)
+
+The test set is now locked away. We will not touch it until the very end when we want to report final performance.
+
+### Secondary split (happens inside skorch)
+
+When we train a neural network and set `train_split=ValidSplit(5)` in skorch (coming soon), skorch automatically subdivides `X_train` into:
+
+- Actual training data: 44,800 images (80% of `X_train`)
+- Validation data: 11,200 images (20% of `X_train`)
+
+Note: `ValidSplit(5)` means use 1/5 = 20% for validation. Use `ValidSplit(4)` for 25%, `ValidSplit(10)` for 10%, etc.
+
+### Final breakdown of all 70,000 images
+
+- Training set (44,800 images, 64% of original): Used to update model weights via backpropagation
+- Validation set (11,200 images, 16% of original): Used during training to monitor overfitting, decide when to stop, and compare hyperparameters
+- Test set (14,000 images, 20% of original): Held out completely until the end for unbiased final evaluation
+
+### Why three splits?
+
+- Test set must be untouched during all training decisions, otherwise you are implicitly tuning to it and your performance estimate will be optimistic
+- Validation set is your working evaluation data during training: it tells you when to stop, which hyperparameters work, whether you are overfitting
+- Training set is what the model learns from via gradient descent
+
+This train/validation/test split is the gold standard in machine learning. The basic MLP tutorial skipped the validation set for simplicity. Now we do it properly.
+
+# Validation Split and Monitoring Training
+
+## Configuring validation with skorch
+
+Now that we understand why we need a validation set, let's set one up. Skorch provides automatic validation splitting via the `train_split` parameter.
+
+When you pass `X_train` and `y_train` to skorch and set `train_split=ValidSplit(5)`, skorch will:
+
+- Hold out 1/5 = 20% of `X_train` as validation data (11,200 images)
+- Use the remaining 80% for actual training (44,800 images)
+- Report both training and validation metrics each epoch
+
+The `ValidSplit(n)` callable divides the data into n parts and uses 1 part for validation. So `ValidSplit(5)` gives 20% validation, `ValidSplit(4)` gives 25%, and so on.
+
+We define a basic MLP to start:
+
+```{python}
+mlp_basic = nn.Sequential(
+    nn.Linear(784, 256),
+    nn.ReLU(),
+    nn.Linear(256, 128),
+    nn.ReLU(),
+    nn.Linear(128, 10)
+)
+```
+
+Now wrap it with skorch and enable validation. Setting `train_split=ValidSplit(5)` means 1/5 = 20% of the training data becomes a validation set.
+
+```{python}
+net_basic = NeuralNetClassifier(
+    mlp_basic,
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=20,
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    lr=1e-3,
+    train_split=ValidSplit(5),  # use 1/5 = 20% for validation
+    device='cpu',
+)
+```
+
+## Training with validation monitoring
+
+Fit the model. Skorch prints both train loss and validation loss (and accuracy) each epoch. Watch how the two diverge.
+
+```{python}
+#| output: false
+net_basic.fit(X_train, y_train)
+```
+
+What are these loss values? Both `train_loss` and `valid_loss` are cross-entropy loss (specified by `criterion=nn.CrossEntropyLoss`). Train loss is computed on the training subset after each epoch, and valid loss is computed on the held-out validation subset. Lower loss means better fit to that data.
+
+## Inspecting the training history
+
+Skorch stores all metrics in the `history` attribute. Each epoch is a dictionary with keys like `train_loss`, `valid_loss`, `valid_acc`.
+
+## Helper functions for plotting
+
+Rather than repeat the same code throughout, we define two reusable functions: one to extract losses from the history, and one to plot them.
+
+```{python}
+def extract_losses(history):
+    """Extract train and validation losses from skorch history."""
+    train_loss = [h['train_loss'] for h in history]
+    valid_loss = [h['valid_loss'] for h in history]
+    epochs = np.arange(1, len(train_loss) + 1)
+    return train_loss, valid_loss, epochs
+
+def plot_learning_curves(train_loss, valid_loss, epochs, title='Learning curves'):
+    """Plot train vs validation loss over epochs."""
+    plt.plot(epochs, train_loss, label='Train loss', marker='o')
+    plt.plot(epochs, valid_loss, label='Validation loss', marker='s')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title(title)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+```
+
+## Plotting learning curves
+
+Visualizing train vs validation loss reveals whether the model is overfitting. If validation loss stops decreasing (or increases) while train loss keeps falling, you are overfitting.
+
+```{python}
+train_loss, valid_loss, epochs = extract_losses(net_basic.history)
+
+plt.figure(figsize=(10, 5))
+plot_learning_curves(train_loss, valid_loss, epochs, title='Learning curves: basic MLP')
+plt.show()
+```
+
+## Interpreting the curves
+
+You should see the validation loss flatten or plateau around 0.10–0.15 after approximately 5 epochs, while training loss continues to decline steadily. This divergence between the two curves is the signature of overfitting: the model is starting to memorize training-specific patterns rather than learning generalizable features.
+
+The validation loss stops improving because the model has learned all the generalizable patterns it can from the data. Further training only helps it fit noise and idiosyncrasies in the training set, which do not transfer to the validation set.
+
+# Demonstrating Overfitting
+
+## Creating a model prone to overfitting
+
+To see overfitting clearly, we make the network much larger and train for more epochs. A bigger network has more capacity to memorize.
+
+```{python}
+mlp_large = nn.Sequential(
+    nn.Linear(784, 512),
+    nn.ReLU(),
+    nn.Linear(512, 512),
+    nn.ReLU(),
+    nn.Linear(512, 10)
+)
+```
+
+This model has many more parameters than our basic MLP. We train for 40 epochs:
+
+```{python}
+net_large = NeuralNetClassifier(
+    mlp_large,
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=40,
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    lr=1e-3,
+    train_split=ValidSplit(5),
+    device='cpu',
+    verbose=0,  # suppress output for cleaner document
+)
+```
+
+```{python}
+#| output: false
+net_large.fit(X_train, y_train)
+```
+## Visualizing overfitting
+
+Extract the loss curves and plot them. You should see the training loss continue to fall while the validation loss flattens or even rises after some point. This is the signature of overfitting.
+
+```{python}
+train_loss_large, valid_loss_large, epochs_large = extract_losses(net_large.history)
+
+plt.figure(figsize=(10, 5))
+plot_learning_curves(train_loss_large, valid_loss_large, epochs_large,
+                     title='Overfitting: large MLP without regularization')
+plt.show()
+```
+
+## What is happening?
+
+The large network has enough capacity to fit noise in the training data. After a certain point, further training improves train loss but harms validation loss. The model is no longer learning the true underlying pattern—it is memorizing training examples.
+
+This is why we need regularization.
+
+# Regularization with Dropout
+
+## What is dropout?
+
+Dropout is a regularization technique that randomly "turns off" neurons during training. Here is exactly how it works:
+
+### During training
+
+On every forward pass (every batch), dropout randomly sets a fraction `p` of the activations (the outputs of neurons) to zero.
+
+Important distinctions:
+
+- Dropout zeros activations, not weights. The weight matrices remain intact.
+- It is applied randomly on each forward pass. With `p=0.5`, each neuron has a 50% chance of being dropped on that particular batch.
+- On the next batch, a different random 50% of neurons will be dropped.
+- This randomness happens every time during training. It is not a one-time initialization step.
+- The decision to drop a neuron is random, not learned. It is not pruning or sparsification.
+
+### At test time
+
+Dropout is completely turned off. All neurons contribute to the prediction. Their outputs are scaled appropriately so the expected magnitude matches what the network saw during training.
+
+### Why does this help?
+
+By forcing the network to work with different random subsets of neurons on each batch, dropout prevents neurons from relying too heavily on specific other neurons. This prevents co-adaptation: neurons learning to correct each other's mistakes rather than learning useful features independently.
+
+It is mathematically equivalent to training an ensemble of exponentially many smaller networks (one for each possible dropout mask) and averaging their predictions. This is why dropout is so effective at reducing overfitting.
+
+Reference: Dropout was introduced by Srivastava et al. (2014), who demonstrated its effectiveness across a wide range of neural network architectures and datasets. For a thorough explanation of the technique, its theoretical justification, and extensive experimental validation, see the original paper.
+
+Srivastava, N., Hinton, G., Krizhevsky, A., Sutskever, I., & Salakhutdinov, R. (2014). Dropout: A simple way to prevent neural networks from overfitting. Journal of Machine Learning Research, 15(1), 1929–1958.
+
+## Adding dropout to the model
+
+Insert `nn.Dropout(p)` layers between your hidden layers, where `p` is the probability of dropping a unit (commonly 0.3 to 0.5).
+
+```{python}
+mlp_dropout = nn.Sequential(
+    nn.Linear(784, 512),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(512, 512),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(512, 10)
+)
+```
+
+We use the same large architecture but add dropout with `p=0.5` after each hidden layer.
+
+## Training with dropout
+
+Fit the model. Dropout is automatically active during training and inactive during validation and testing.
+
+```{python}
+#| output: false
+net_dropout = NeuralNetClassifier(
+    mlp_dropout,
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=40,
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    lr=1e-3,
+    train_split=ValidSplit(5),
+    device='cpu',
+    verbose=0,
+)
+
+net_dropout.fit(X_train, y_train)
+```
+
+## Comparing learning curves
+
+Plot the new curves alongside the unregularized model. Dropout should reduce the gap between train and validation loss.
+
+```{python}
+train_loss_dropout, valid_loss_dropout, epochs_dropout = extract_losses(net_dropout.history)
+
+plt.figure(figsize=(12, 5))
+
+# Unregularized model
+plt.subplot(1, 2, 1)
+plot_learning_curves(train_loss_large, valid_loss_large, epochs_large, title='Without dropout')
+
+# Model with dropout
+plt.subplot(1, 2, 2)
+plot_learning_curves(train_loss_dropout, valid_loss_dropout, epochs_dropout,
+                     title='With dropout (p=0.5)')
+
+plt.tight_layout()
+plt.show()
+```
+
+## Interpretation
+
+With dropout, the gap between train and validation loss is smaller. The model generalizes better. Dropout is one of the most effective regularization techniques in deep learning.
+
+# Regularization with Weight Decay
+
+## What is weight decay?
+
+Weight decay is L2 regularization applied to the neural network's weights. If you have used ridge regression, this is the same penalty term.
+
+### The mechanism
+
+During training, the optimizer not only minimizes the loss function but also penalizes large weights. The loss function becomes:
+
+$$
+\text{Total Loss} = \text{Cross-Entropy Loss} + \lambda \sum_{i} w_i^2
+$$
+
+where $\lambda$ is the weight decay coefficient (commonly called `weight_decay` in PyTorch) and $w_i$ are the model's weights.
+
+### How it prevents overfitting
+
+Large weights allow the network to fit complex, non-smooth functions that can memorize training data. By penalizing large weights, weight decay encourages the network to:
+
+- Use smaller, more distributed representations
+- Prefer smoother decision boundaries
+- Be less sensitive to individual training examples
+
+This is exactly the same principle as ridge regression: the penalty shrinks coefficients toward zero, reducing model complexity.
+
+### Weight decay vs dropout
+
+Both are regularization techniques but work differently:
+
+- Dropout: Stochastic (random) regularization during training; zeros activations
+- Weight decay: Deterministic (fixed) penalty on weights; shrinks all weights proportionally
+
+They can be used together for even stronger regularization. In practice, weight decay is nearly universal in deep learning, while dropout is more selective (often used only in fully-connected layers).
+
+## Adding weight decay
+
+In skorch, set weight decay via the `optimizer__weight_decay` parameter. This passes the value to the PyTorch optimizer.
+
+We use the same large architecture but without dropout, adding only weight decay:
+
+```{python}
+mlp_weightdecay = nn.Sequential(
+    nn.Linear(784, 512),
+    nn.ReLU(),
+    nn.Linear(512, 512),
+    nn.ReLU(),
+    nn.Linear(512, 10)
+)
+```
+
+## Training with weight decay
+
+Set `optimizer__weight_decay` to a small positive value like 1e-4. This is equivalent to setting $\lambda = 10^{-4}$ in the equation above.
+
+```{python}
+#| output: false
+net_weightdecay = NeuralNetClassifier(
+    mlp_weightdecay,
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=40,
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    lr=1e-3,
+    optimizer__weight_decay=1e-4,  # L2 penalty on weights
+    train_split=ValidSplit(5),
+    device='cpu',
+    verbose=0,
+)
+
+net_weightdecay.fit(X_train, y_train)
+```
+
+## Comparing regularization methods
+
+Plot weight decay alongside the unregularized model. Weight decay should reduce overfitting, though perhaps less dramatically than dropout for this architecture.
+
+```{python}
+train_loss_wd, valid_loss_wd, epochs_wd = extract_losses(net_weightdecay.history)
+
+plt.figure(figsize=(12, 5))
+
+# Unregularized model
+plt.subplot(1, 2, 1)
+plot_learning_curves(train_loss_large, valid_loss_large, epochs_large,
+                     title='Without regularization')
+
+# Model with weight decay
+plt.subplot(1, 2, 2)
+plot_learning_curves(train_loss_wd, valid_loss_wd, epochs_wd,
+                     title='With weight decay (1e-4)')
+
+plt.tight_layout()
+plt.show()
+```
+
+## Interpretation
+
+Weight decay reduces the train-validation gap, though its effect may be subtler than dropout's. The training loss decreases more slowly because the optimizer is simultaneously trying to minimize loss and keep weights small.
+
+Weight decay is computationally cheaper than dropout (no random sampling needed) and is a standard component of nearly every modern deep learning training recipe. It is especially effective when combined with other regularization techniques.
+
+# Early Stopping
+
+## Why early stopping?
+
+Even with dropout, validation loss eventually stops improving. Continuing to train wastes time and may slightly harm performance. Early stopping automatically halts training when validation loss has not improved for a specified number of epochs (the "patience").
+
+This is the most widely used form of regularization in deep learning.
+
+## Using the EarlyStopping callback
+
+Skorch provides an `EarlyStopping` callback. You specify:
+
+- `monitor`: which metric to watch (default is `valid_loss`)
+- `patience`: how many epochs to wait for improvement
+- `lower_is_better`: whether lower values are better (True for loss, False for accuracy)
+
+```{python}
+mlp_early = nn.Sequential(
+    nn.Linear(784, 512),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(512, 512),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(512, 10)
+)
+```
+
+Create the classifier with the callback:
+
+```{python}
+early_stop = EarlyStopping(
+    monitor='valid_loss',
+    patience=5,
+    lower_is_better=True
+)
+
+net_early = NeuralNetClassifier(
+    mlp_early,
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=100,  # set high; early stopping will halt before this
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    lr=1e-3,
+    train_split=ValidSplit(5),
+    device='cpu',
+    callbacks=[early_stop],
+    verbose=0,
+)
+```
+
+## Training with early stopping
+
+Fit the model. Training will stop automatically when validation loss does not improve for 5 consecutive epochs.
+
+```{python}
+#| output: false
+net_early.fit(X_train, y_train)
+```
+
+## How many epochs did it actually train?
+
+Check the history length:
+
+```{python}
+actual_epochs = len(net_early.history)
+print(f'Training stopped at epoch {actual_epochs}')
+```
+
+Early stopping saved us from running the full 100 epochs. It stopped when further training was unlikely to help.
+
+## Visualizing early stopping
+
+Plot the learning curve and mark where training stopped:
+
+```{python}
+train_loss_early, valid_loss_early, epochs_early = extract_losses(net_early.history)
+
+plt.figure(figsize=(10, 5))
+plot_learning_curves(train_loss_early, valid_loss_early, epochs_early,
+                     title='Training with early stopping (patience=5)')
+plt.axvline(x=actual_epochs, color='red', linestyle='--', label='Early stop')
+plt.legend()
+plt.show()
+```
+
+Early stopping is simple, effective, and standard practice in deep learning.
+
+# Hyperparameter Tuning
+
+## Why tune hyperparameters?
+
+Neural networks have many hyperparameters: learning rate, network size, dropout rate, batch size, optimizer choice. The default values may not be optimal for your data.
+
+Systematic tuning can improve performance significantly.
+
+## Using GridSearchCV with skorch
+
+Because skorch wraps PyTorch models as scikit-learn estimators, we can use `GridSearchCV` for hyperparameter search. GridSearchCV tries all combinations of specified hyperparameters, evaluates each with cross-validation, and reports the best.
+
+## Defining the search space
+
+We will tune:
+
+- `lr`: learning rate (1e-4, 1e-3, 1e-2)
+- `module__0__out_features`: size of the first hidden layer (128, 256, 512)
+- `optimizer__weight_decay`: L2 penalty (0, 1e-4, 1e-3)
+
+Note the `module__` prefix to access parts of the model, and `optimizer__` to access optimizer parameters.
+
+First define a model factory. GridSearchCV needs to create fresh models for each trial:
+
+```{python}
+def make_mlp(hidden_size=256):
+    return nn.Sequential(
+        nn.Linear(784, hidden_size),
+        nn.ReLU(),
+        nn.Dropout(0.3),
+        nn.Linear(hidden_size, 10)
+    )
+```
+
+We use a simpler architecture (one hidden layer) to keep tuning fast.
+
+## Setting up the grid search
+
+Define the parameter grid and create a `GridSearchCV` instance. We use 3-fold cross-validation and score by accuracy.
+
+```{python}
+net_tune = NeuralNetClassifier(
+    module=make_mlp,
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=15,
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    train_split=None,  # GridSearchCV handles splits
+    device='cpu',
+    verbose=0,
+)
+
+param_grid = {
+    'lr': [1e-4, 1e-3, 1e-2],
+    'module__hidden_size': [128, 256, 512],
+    'optimizer__weight_decay': [0, 1e-4, 1e-3],
+}
+
+grid = GridSearchCV(
+    net_tune,
+    param_grid,
+    cv=3,
+    scoring='accuracy',
+    verbose=1,
+    n_jobs=1,  # set higher if you have multiple cores
+)
+```
+
+## Running the search
+
+Fit the grid. This will train 3 × 3 × 3 = 27 models, each with 3-fold CV, for a total of 81 fits. On MNIST with 15 epochs each, this may take several minutes.
+
+```{python}
+#| output: false
+grid.fit(X_train, y_train)
+```
+
+## Best parameters and score
+
+GridSearchCV stores the best configuration:
+
+```{python}
+print('Best parameters:', grid.best_params_)
+print('Best cross-validation accuracy:', grid.best_score_)
+```
+
+## Interpretation
+
+The search identifies the best combination of hyperparameters on your data. You can now use `grid.best_estimator_` for predictions, or retrain with these settings on the full training set.
+
+Hyperparameter tuning is essential when you need maximum performance. For teaching and prototyping, sensible defaults often suffice.
+
+# Baseline Comparison
+
+## Why compare to a baseline?
+
+Neural networks are powerful but complex and slow to train. Before committing to a neural network, check whether a simpler model suffices.
+
+Logistic regression is a natural baseline for MNIST. It is fast, interpretable, and often surprisingly competitive.
+
+## Training logistic regression
+
+We use scikit-learn's `LogisticRegression` with increased iterations for convergence. We also scale features (standard practice for logistic regression) using a pipeline.
+
+```{python}
+logreg_pipe = Pipeline([
+    ('scaler', StandardScaler()),
+    ('clf', LogisticRegression(max_iter=10000, random_state=0))
+])
+
+logreg_pipe.fit(X_train, y_train)
+logreg_acc = logreg_pipe.score(X_test, y_test)
+print(f'Logistic regression test accuracy: {logreg_acc:.4f}')
+```
+
+## Training a well-regularized MLP
+
+For the baseline comparison, we need a well-trained MLP to evaluate on the test set. In practice, you would use `grid.best_estimator_` from the grid search above. For this demonstration, we instead construct a model incorporating the regularization techniques we have learned: dropout and early stopping.
+
+This model represents what you would build after tuning: a reasonably-sized architecture with appropriate regularization:
+
+```{python}
+mlp_final = nn.Sequential(
+    nn.Linear(784, 256),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(256, 128),
+    nn.ReLU(),
+    nn.Dropout(0.5),
+    nn.Linear(128, 10)
+)
+
+net_final = NeuralNetClassifier(
+    mlp_final,
+    criterion=nn.CrossEntropyLoss,
+    max_epochs=30,
+    batch_size=128,
+    optimizer=torch.optim.Adam,
+    lr=1e-3,
+    train_split=ValidSplit(5),
+    device='cpu',
+    callbacks=[EarlyStopping(patience=5)],
+    verbose=0,
+)
+
+net_final.fit(X_train, y_train)
+mlp_acc = net_final.score(X_test, y_test)
+print(f'MLP test accuracy: {mlp_acc:.4f}')
+```
+
+Note: If you wanted to use the grid search results instead, you could evaluate the best model directly:
+```python
+# Alternative: use the grid search winner
+# mlp_acc = grid.best_estimator_.score(X_test, y_test)
+```
+
+## Comparing the results
+
+```{python}
+print('\\n--- Final Comparison ---')
+print(f'Logistic Regression: {logreg_acc:.4f}')
+print(f'MLP with dropout and early stopping: {mlp_acc:.4f}')
+print(f'Improvement: {(mlp_acc - logreg_acc):.4f} ({(mlp_acc - logreg_acc)/logreg_acc*100:.2f}%)')
+```
+
+## Interpretation
+
+On MNIST, the MLP typically achieves 97–98% accuracy, while logistic regression achieves around 92–93%. The MLP is better, but not dramatically so.
+
+For more complex images (e.g., natural photographs), the gap would be much larger. For simple tabular data, logistic regression might match or even beat a shallow MLP.
+
+Always compare to a simple baseline. It tells you whether the added complexity of a neural network is justified.
+
+# Summary
+
+You now know how to:
+
+1. Monitor training with a validation set and visualize learning curves
+2. Recognize overfitting when validation loss diverges from training loss
+3. Apply dropout to regularize large networks
+4. Apply weight decay (L2 regularization) to penalize large weights
+5. Use early stopping to halt training automatically at the right time
+6. Tune hyperparameters systematically with GridSearchCV
+7. Compare to a baseline to justify model complexity
