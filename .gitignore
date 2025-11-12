@@ -25,7 +25,9 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+<<<<<<< Updated upstream
 
 # coding agents
 CLAUDE.md
 .envrc
+.venv
