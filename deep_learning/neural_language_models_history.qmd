@@ -1,0 +1,125 @@
+---
+title: "Neural Language Models: A Brief History"
+subtitle: "From feedforward struggles to Transformers"
+date: "11 November 2025"
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    controls: true
+    toc: false
+    incremental: false
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+mermaid:
+  theme: default
+  themeVariables:
+    clusterBkg: transparent
+    clusterBorder: "#999999"
+---
+
+## Why feedforward networks struggle with language
+
+- Multilayer perceptrons treat inputs as fixed-length vectors with no native sense of order.
+- Bag-of-words encodings throw away word position, so they cannot distinguish "dog bites man" from "man bites dog".
+- The number of parameters grows with context size, making it impractical to capture long-range dependencies.
+- Shared parameters are missing, so each position in the context must learn its own weights.
+
+```{mermaid}
+%%| fig-align: center
+flowchart LR
+  subgraph Context
+    w1([wₜ₋₂])
+    w2([wₜ₋₁])
+    w3([wₜ])
+  end
+  w1 --> FFN([Feedforward layer])
+  w2 --> FFN
+  w3 --> FFN
+  FFN --> y([Prediction])
+  classDef faded fill:#f5f5f5,stroke:#cccccc,color:#666666
+  class w1,w2,w3,FFN,y faded
+```
+
+## Language demands sequential structure
+
+- Words build meaning through order, syntax, and agreement across distance.
+- Human language exhibits phenomena such as subject–verb agreement and coreference that depend on long histories.
+- Vectorising whole sentences must preserve both the tokens and how they unfold through time.
+- Reusing parameters across positions is essential to keep models tractable.
+
+## Enter recurrent neural networks (RNNs)
+
+- RNNs reuse the same cell at every time step, sharing weights across positions.
+- The hidden state carries information from previous tokens, enabling order-aware predictions.
+- Training uses backpropagation through time, unfolding the network across the sequence during optimisation.
+- Early successes included character-level language modelling and simple sequence prediction.
+
+```{mermaid}
+flowchart LR
+  w_prev["w(t-2)"] --> h_prev(("h(t-2)"))
+  h_prev --> h_curr(("h(t-1)"))
+  w_curr["w(t-1)"] --> h_curr
+  h_curr --> h_next(("h(t)"))
+  w_next["w(t)"] --> h_next
+  h_next --> pred["P(w(t+1))"]
+```
+
+## The vanishing gradient problem
+
+- Training RNNs revealed that gradients shrink or explode as they traverse long sequences.
+- Shrinking gradients prevent the network from learning dependencies beyond a few steps.
+- Exploding gradients destabilise optimisation unless carefully clipped.
+- Researchers needed architectures that preserved information over longer time spans.
+
+## Long Short-Term Memory (LSTM)
+
+- In 1997 Sepp Hochreiter and Jürgen Schmidhuber proposed LSTMs with gated memory cells.
+- Input, forget, and output gates learn when to write, erase, or expose information.
+- The cell state provides a highway for gradients, mitigating vanishing issues.
+- LSTMs quickly became the default for language modelling, speech, and translation tasks.
+
+## Gated recurrent unit (GRU)
+
+- Kyunghyun Cho and colleagues introduced the GRU in 2014 as a simpler gated alternative.
+- It merges forget and input gates into an update gate, reducing parameters while retaining performance.
+- GRUs often train faster than LSTMs and perform well on medium-length sequences.
+
+## Neural machine translation with attention
+
+- In 2014 Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio added attention to sequence-to-sequence models.
+- The encoder converts the source sentence into a sequence of hidden states instead of a single vector.
+- Attention lets the decoder weight these states dynamically for each output token.
+- The mechanism improved translation quality and interpretability by highlighting relevant source words.
+
+## Attention unlocks long-range reasoning
+
+- Attention provides direct paths between any encoder and decoder positions.
+- The decoder can focus on semantically important words regardless of distance.
+- Weights are learned dynamically, producing context vectors tailored to each output step.
+- Attention mitigated the bottleneck of compressing entire sentences into a single vector.
+
+## Transformers: attention is all you need
+
+- In 2017 Vaswani et al. replaced recurrence with stacked self-attention and feedforward layers.
+- Self-attention lets each token attend to every other token in the layer with shared weights.
+- Positional encodings restore order information without recurrence.
+- Transformers train in parallel across sequence positions, leveraging GPUs efficiently.
+
+## Scaling up language models
+
+- Subsequent work scaled Transformers to billions of parameters and trillions of tokens.
+- Pretraining on diverse corpora followed by task-specific fine-tuning achieved state-of-the-art results.
+- Large language models such as GPT, BERT, and T5 demonstrated transfer learning across NLP tasks.
+- Instruction tuning and reinforcement learning from human feedback further refined their behaviour.
+
+## Key takeaways
+
+- Feedforward networks cannot easily model ordered sequences, motivating recurrent architectures.
+- LSTMs and GRUs solved optimisation hurdles, allowing language models to capture longer contexts.
+- Attention introduced differentiable alignment, culminating in Transformer architectures.
+- Modern LLMs build on these milestones, combining scale, data, and attention to model language effectively.

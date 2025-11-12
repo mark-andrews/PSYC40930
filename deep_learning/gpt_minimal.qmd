@@ -1,0 +1,354 @@
+---
+title: "A Minimal GPT"
+subtitle: "The simplest transformer language model"
+format:
+  html:
+    toc: true
+    number-sections: false
+    embed-resources: true
+  revealjs:
+    theme: simple
+    slide-number: true
+    controls: true
+    toc: false
+    incremental: false
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: false
+jupyter: python3
+---
+
+## Overview
+
+A truly minimal GPT to understand the core concepts:
+
+- Character-level tokenization (simplest approach)
+- Single transformer block (attention + feedforward)
+- Tiny model (64-dim embeddings, 2 attention heads)
+- Small context window (32 tokens)
+- Quick training (~30 seconds on CPU)
+
+This strips away complexity to reveal the essence of how GPTs work.
+
+## Imports
+
+```{python}
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+import requests
+```
+
+## Minimal hyperparameters
+
+Everything is kept as small as possible while still learning something useful.
+
+```{python}
+# Model hyperparameters
+block_size = 32      # context window: how many characters to look back
+n_embd = 64          # embedding size: how many dimensions per token
+n_head = 2           # number of attention heads (must divide n_embd evenly)
+n_layer = 1          # just ONE transformer block
+dropout = 0.1
+
+# Training hyperparameters
+batch_size = 16
+max_iters = 500      # very short training for fast iteration
+learning_rate = 3e-4
+eval_interval = 250  # print loss halfway through
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+print(f"Training on: {device}")
+```
+
+## Load tiny Shakespeare
+
+Same dataset, but we'll use less of it for faster training.
+
+```{python}
+url = 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt'
+text = requests.get(url).text
+
+# Use only first 100K characters for speed
+text = text[:100000]
+print(f"Corpus length: {len(text):,} characters")
+print(text[:200])
+```
+
+## Character tokenization
+
+Map each unique character to an integer.
+
+```{python}
+chars = sorted(list(set(text)))
+vocab_size = len(chars)
+print(f"Vocabulary: {''.join(chars)}")
+print(f"Vocab size: {vocab_size}")
+
+stoi = {ch: i for i, ch in enumerate(chars)}
+itos = {i: ch for i, ch in enumerate(chars)}
+
+encode = lambda s: [stoi[c] for c in s]
+decode = lambda l: ''.join([itos[i] for i in l])
+```
+
+## Train/val split
+
+```{python}
+data = torch.tensor(encode(text), dtype=torch.long)
+n = int(0.9 * len(data))
+train_data = data[:n]
+val_data = data[n:]
+print(f"Train: {len(train_data):,} tokens | Val: {len(val_data):,} tokens")
+```
+
+## Batch generation
+
+Sample random sequences for training. Targets are inputs shifted by one position.
+
+```{python}
+def get_batch(split):
+    data = train_data if split == 'train' else val_data
+    ix = torch.randint(len(data) - block_size, (batch_size,))
+    x = torch.stack([data[i:i+block_size] for i in ix])
+    y = torch.stack([data[i+1:i+block_size+1] for i in ix])
+    return x.to(device), y.to(device)
+
+xb, yb = get_batch('train')
+print(f"Input batch: {xb.shape} | Target batch: {yb.shape}")
+```
+
+## One attention head
+
+The core of a transformer: scaled dot-product attention with causal masking.
+
+```{python}
+class Head(nn.Module):
+    """One head of self-attention"""
+
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+        # Causal mask: can't attend to future positions
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        B, T, C = x.shape
+        k = self.key(x)    # (B, T, head_size)
+        q = self.query(x)  # (B, T, head_size)
+
+        # Attention scores: how much each position should attend to others
+        wei = q @ k.transpose(-2, -1) * (C ** -0.5)  # (B, T, T)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+        wei = F.softmax(wei, dim=-1)
+        wei = self.dropout(wei)
+
+        # Weighted aggregation of values
+        v = self.value(x)  # (B, T, head_size)
+        out = wei @ v      # (B, T, head_size)
+        return out
+```
+
+## Multi-head attention
+
+Run multiple attention heads in parallel and combine their outputs.
+
+```{python}
+class MultiHeadAttention(nn.Module):
+    """Multiple heads in parallel"""
+
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.proj = nn.Linear(n_embd, n_embd)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.dropout(self.proj(out))
+        return out
+```
+
+## Feedforward network
+
+Simple MLP applied to each position independently.
+
+```{python}
+class FeedForward(nn.Module):
+    """Position-wise feedforward network"""
+
+    def __init__(self, n_embd):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embd, 4 * n_embd),  # expand
+            nn.ReLU(),
+            nn.Linear(4 * n_embd, n_embd),  # project back
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+```
+
+## One transformer block
+
+Attention (tokens communicate) followed by computation (feedforward).
+
+```{python}
+class TransformerBlock(nn.Module):
+    """One transformer block: attention + FFN with residuals"""
+
+    def __init__(self, n_embd, n_head):
+        super().__init__()
+        head_size = n_embd // n_head
+        self.sa = MultiHeadAttention(n_head, head_size)
+        self.ffwd = FeedForward(n_embd)
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
+
+    def forward(self, x):
+        # Attention with residual connection
+        x = x + self.sa(self.ln1(x))
+        # Feedforward with residual connection
+        x = x + self.ffwd(self.ln2(x))
+        return x
+```
+
+## The minimal GPT model
+
+Token embeddings + position embeddings + one transformer block + output projection.
+
+```{python}
+class MinimalGPT(nn.Module):
+    """Absolute minimal GPT: just embeddings, one block, and LM head"""
+
+    def __init__(self):
+        super().__init__()
+        self.token_embedding = nn.Embedding(vocab_size, n_embd)
+        self.position_embedding = nn.Embedding(block_size, n_embd)
+        self.block = TransformerBlock(n_embd, n_head)  # just ONE block!
+        self.ln_f = nn.LayerNorm(n_embd)
+        self.lm_head = nn.Linear(n_embd, vocab_size)
+
+    def forward(self, idx, targets=None):
+        B, T = idx.shape
+
+        # Embed tokens and positions
+        tok_emb = self.token_embedding(idx)  # (B, T, n_embd)
+        pos_emb = self.position_embedding(torch.arange(T, device=device))  # (T, n_embd)
+        x = tok_emb + pos_emb
+
+        # Pass through transformer block
+        x = self.block(x)
+        x = self.ln_f(x)
+
+        # Project to vocabulary
+        logits = self.lm_head(x)  # (B, T, vocab_size)
+
+        if targets is None:
+            loss = None
+        else:
+            B, T, C = logits.shape
+            logits = logits.view(B*T, C)
+            targets = targets.view(B*T)
+            loss = F.cross_entropy(logits, targets)
+
+        return logits, loss
+
+    def generate(self, idx, max_new_tokens):
+        """Generate text one token at a time"""
+        for _ in range(max_new_tokens):
+            idx_cond = idx[:, -block_size:]  # crop to context window
+            logits, _ = self(idx_cond)
+            logits = logits[:, -1, :]  # last position
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+        return idx
+```
+
+## Initialize model
+
+```{python}
+model = MinimalGPT().to(device)
+n_params = sum(p.numel() for p in model.parameters())
+print(f"Model parameters: {n_params:,}")
+print(f"Compare to original GPT-2 (117M) or GPT-3 (175B)!")
+```
+
+## Training
+
+Short training loop—just 500 iterations.
+
+```{python}
+optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+
+@torch.no_grad()
+def estimate_loss():
+    out = {}
+    model.eval()
+    for split in ['train', 'val']:
+        losses = torch.zeros(100)
+        for k in range(100):
+            X, Y = get_batch(split)
+            logits, loss = model(X, Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    model.train()
+    return out
+
+for iter in range(max_iters):
+    if iter % eval_interval == 0 or iter == max_iters - 1:
+        losses = estimate_loss()
+        print(f"Step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
+    xb, yb = get_batch('train')
+    logits, loss = model(xb, yb)
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
+
+print("Training complete!")
+```
+
+## Generate text
+
+See what our minimal model learned.
+
+```{python}
+context = torch.zeros((1, 1), dtype=torch.long, device=device)
+generated = model.generate(context, max_new_tokens=300)
+print(decode(generated[0].tolist()))
+```
+
+## What this demonstrates
+
+Even with minimal architecture:
+
+1. **Tokenization**: Text → numbers (here: characters → integers)
+2. **Embeddings**: Tokens and positions become dense vectors
+3. **Self-attention**: Tokens "look at" previous tokens (causal mask prevents future peeking)
+4. **Feedforward**: Additional computation per position
+5. **Residual connections**: Help gradients flow (the `x = x + ...` pattern)
+6. **Layer normalization**: Stabilize training
+7. **Autoregressive generation**: Predict next token, feed back as input, repeat
+
+## Scaling up
+
+To improve this model:
+
+- **More layers**: Stack 3, 6, 12+ transformer blocks
+- **Larger embeddings**: 256, 512, 1024+ dimensions
+- **More heads**: 4, 8, 16+ attention heads
+- **Bigger context**: 512, 1024, 2048+ tokens
+- **Better tokenization**: Byte-pair encoding (BPE) instead of characters
+- **More data**: Billions of tokens instead of 100K characters
+- **Longer training**: Millions of iterations instead of 500
+
+But the core architecture stays the same!

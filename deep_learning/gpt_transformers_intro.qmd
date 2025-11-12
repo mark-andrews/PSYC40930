@@ -1,0 +1,294 @@
+---
+title: "GPTs with Transformers"
+subtitle: "High-level language modelling walkthrough"
+format:
+    html:
+        embed-resources: true
+        toc: true
+        toc-depth: 2
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: false
+---
+
+# Introduction
+
+This document introduces GPT-style language models using Hugging Face's Transformers library.
+It is written for readers who already understand multilayer perceptrons, gradient descent, and loss functions, and who have trained networks with tools such as skorch.
+GPTs extend those ideas from fixed-size vectors to variable-length text sequences.
+The goal here is to provide a gentle yet thorough walkthrough that mirrors the abstraction level of `mlp.qmd` and `mlp_advanced.qmd`, while avoiding low-level PyTorch boilerplate.
+
+# From MLPs to GPTs
+
+Multilayer perceptrons learn deterministic maps from input vectors to output vectors.
+GPTs learn to model entire sequences by predicting the next token given all previous tokens.
+Despite the apparent jump in complexity, GPTs still rely on the familiar optimisation recipe: define a differentiable model, choose a loss function, and minimise it with gradient descent.
+The main differences lie in how the data are prepared, how the model handles sequence order, and how predictions feed back into the input when generating text.
+
+The Transformers library provides high-level abstractions analogous to skorch.
+Instead of writing custom training loops, we configure a `Trainer` object with datasets and hyperparameters.
+Instead of constructing an `nn.Sequential` network from scratch, we load a pretrained GPT checkpoint.
+The result is a compact workflow that keeps the focus on concepts rather than housekeeping code.
+
+# Language Modelling Objective
+
+A language model assigns probabilities to sequences of tokens.
+Tokens can be characters, subwords, or whole words, depending on the tokenizer.
+During training we break text into overlapping pairs consisting of a context (all tokens up to a position) and the target (the next token).
+The model produces a probability distribution over the vocabulary for every position in the sequence.
+We compare that distribution to the actual next token using cross-entropy loss, and we average the loss across positions.
+Minimising this loss teaches the model to place high probability mass on the correct continuations of the text.
+
+Once the model has been trained, we can generate new text by iteratively predicting the next token, sampling it, appending it to the context, and repeating the process.
+The seemingly creative behaviour of GPTs emerges from repeating this simple loop many times.
+
+## Autoregressive Objective
+
+The term *autoregressive* emphasises that the model conditions on its own previous outputs.
+At training time, we feed the model the ground-truth prefix and ask it to predict the next token.
+At generation time, we no longer have the ground truth, so we feed back the model's sampled prediction and ask for the next one.
+This approach makes the training objective consistent with the way we use the model during inference.
+Because the model practices predicting responses to authentic prefixes, it tends to produce fluent continuations even when it must rely on its own earlier guesses.
+
+## Self-Attention
+
+Self-attention is the mechanism that lets GPTs capture long-range dependencies more efficiently than recurrent networks.
+Each position in the sequence computes a set of attention weights over all earlier positions.
+These weights determine how strongly each token should influence the hidden representation at the current position.
+Because attention weights are learned functions of the token embeddings themselves, the model can dynamically focus on the most relevant context for each prediction.
+Stacking multiple self-attention layers allows the model to build rich contextual representations that incorporate both local syntax and broader discourse cues.
+
+# Transformers Toolkit Overview
+
+The Hugging Face Transformers library offers high-level components that encapsulate common NLP workflows.
+
+- The `AutoTokenizer` class converts between raw text and token IDs and handles special tokens such as padding and end-of-sequence markers.
+- The `AutoModelForCausalLM` class loads GPT-like architectures that are already pretrained on massive corpora.
+- The `Trainer` API orchestrates training loops, evaluation, logging, and checkpointing, much like skorch does for PyTorch models.
+- Finally, the `pipeline` function exposes ready-to-use inference pipelines for tasks such as text generation.
+
+To run the code below you will need the `transformers`, `datasets`, and `accelerate` packages installed in your Python environment.
+
+# Imports and Deterministic Setup
+
+We begin by importing the required libraries and seeding the random number generators so that results are reproducible.
+
+```{python}
+from datasets import Dataset
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    Trainer,
+    TrainingArguments,
+    pipeline,
+)
+import numpy as np
+import torch
+import random
+import re
+
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+```
+
+# A Tiny Psychology Corpus
+
+To keep training fast we build a very small corpus consisting of eight short sentences drawn from psychological research themes.
+The corpus is intentionally tiny so that the training run completes quickly on a CPU.
+In practice you would work with thousands or millions of sentences.
+
+```{python}
+corpus = [
+    "Cognitive load influences working memory precision.",
+    "Mindfulness practice reduces stress responses in students.",
+    "Reaction times slow when attention is divided across tasks.",
+    "Reward prediction errors drive reinforcement learning in humans.",
+    "Emotion regulation strategies differ between individuals.",
+    "Social conformity increases when group identity is salient.",
+    "Sleep deprivation impairs decision making consistency.",
+    "Neural representations adapt during skill acquisition.",
+]
+
+raw_dataset = Dataset.from_dict({"text": corpus})
+raw_dataset
+```
+
+# Train / Validation Split
+
+Just as with vision or tabular data, we reserve a portion of the examples for validation.
+The Hugging Face `Dataset` object provides a convenient `train_test_split` helper.
+Here we allocate 25% of the sentences to a validation set.
+Although the corpus is tiny, the split demonstrates the workflow used for larger datasets.
+
+```{python}
+splits = raw_dataset.train_test_split(test_size=0.25, seed=SEED)
+train_ds = splits["train"]
+valid_ds = splits["test"]
+len(train_ds), len(valid_ds)
+```
+
+# Tokenisation and Padding
+
+GPT models rely on byte-pair encoding (BPE) tokenisers that break text into subword units.
+Reusing the tokeniser from a pretrained checkpoint ensures that any weights we load later remain compatible.
+We select `distilgpt2`, a lightweight GPT-2 variant, because it is small enough for demonstration purposes.
+The code below instantiates the tokeniser, adds a padding token if necessary, and tokenises each sentence into a fixed-length sequence of token IDs.
+We truncate longer sentences to 64 tokens and pad shorter ones so that batches have a consistent shape.
+
+```{python}
+checkpoint = "distilgpt2"  # lightweight GPT-2 variant
+
+# Load the tokenizer that matches the pretrained checkpoint so token IDs align with model weights.
+tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+if tokenizer.pad_token is None:
+    # GPT-2 style tokenizers often lack an explicit pad token, so we reuse the end-of-sequence token for padding.
+    tokenizer.pad_token = tokenizer.eos_token
+
+# Convert raw text into fixed-length token ID sequences with truncation and padding for batching.
+def tokenize(batch):
+    return tokenizer(
+        batch["text"],
+        truncation=True,
+        padding="max_length",
+        max_length=64,
+    )
+
+# Apply the tokenizer to every example in the train and validation splits, dropping the original text column.
+# Removing `text` keeps only the numeric tensors that the Trainer expects (`input_ids`, `attention_mask`, etc.).
+train_tokenized = train_ds.map(tokenize, batched=True, remove_columns=["text"])
+valid_tokenized = valid_ds.map(tokenize, batched=True, remove_columns=["text"])
+```
+
+# Preparing Labels for Causal Language Modelling
+
+For causal language modelling, the target labels are simply the input token IDs shifted by one position.
+Hugging Face's Trainer expects the dataset to expose a `labels` field for supervised learning.
+The helper function below copies the token IDs into a new `labels` column so that each position in the sequence is trained to predict the next token.
+
+```{python}
+def add_labels(batch):
+    # For causal language modelling we supervise each position with the token that actually occurs there.
+    # The GPT loss function internally shifts targets so position t learns to predict the token at t, given tokens < t.
+    batch["labels"] = batch["input_ids"].copy()
+    return batch
+
+train_ready = train_tokenized.map(add_labels, batched=False)
+valid_ready = valid_tokenized.map(add_labels, batched=False)
+train_ready.features
+```
+
+# Loading a Pretrained GPT Head
+
+With the tokeniser prepared we can instantiate the actual neural network.
+`AutoModelForCausalLM` downloads the `distilgpt2` weights and configures the model for autoregressive generation.
+We also ensure the padding token ID is set so that the Trainer can mask padded positions during loss computation.
+
+```{python}
+model = AutoModelForCausalLM.from_pretrained(checkpoint)
+model.config.pad_token_id = tokenizer.pad_token_id
+```
+
+# Training Configuration
+
+The `TrainingArguments` object collects all the hyperparameters needed for fine-tuning: number of epochs, batch sizes, learning rate, evaluation schedule, and logging frequency.
+This is conceptually similar to configuring a `NeuralNetClassifier` in skorch.
+For this miniature example we train for two epochs with small batch sizes and a modest amount of weight decay.
+
+```{python}
+training_kwargs = {
+    "output_dir": "./gpt-toy-out",
+    "overwrite_output_dir": True,
+    # "evaluation_strategy": "epoch",
+    "logging_strategy": "epoch",
+    "num_train_epochs": 2,
+    "per_device_train_batch_size": 2,
+    "per_device_eval_batch_size": 2,
+    "gradient_accumulation_steps": 2,
+    "warmup_steps": 5,
+    "weight_decay": 0.01,
+    "learning_rate": 5e-5,
+    "save_strategy": "no",
+    "report_to": "none",
+    "seed": SEED,
+}
+training_args = TrainingArguments(**training_kwargs)
+
+```
+
+The loop starts with sensible defaults and simply drops any arguments the installed Transformers version does not recognise, keeping the code compact.
+
+# Fine-Tuning with the Trainer API
+
+The `Trainer` class wraps the training loop, evaluation, and gradient updates.
+We pass it the model, training arguments, and the tokenised datasets.
+Calling `trainer.train()` performs optimisation and returns a summary object containing the final training metrics.
+This abstraction mirrors the ergonomics of calling `net.fit()` when working with skorch.
+
+```{python}
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_ready,
+    eval_dataset=valid_ready,
+)
+train_output = trainer.train()
+train_output
+```
+
+# Evaluating with Perplexity
+
+To gauge how well the fine-tuned model fits the validation data, we evaluate it and convert the cross-entropy loss into perplexity by exponentiation.
+Perplexity can be interpreted as the average number of equally likely alternatives the model considers at each step; lower values indicate better language modelling performance.
+
+```{python}
+metrics = trainer.evaluate()
+perplexity = float(np.exp(metrics["eval_loss"]))
+perplexity
+```
+
+# Text Generation Pipeline
+
+Once training completes we can build a text-generation pipeline.
+Hugging Face's `pipeline` function combines the model and tokeniser into a callable object that accepts prompts and returns generated continuations.
+The example below uses nucleus sampling (`top_p`) and a temperature parameter to encourage varied but coherent text about psychology students.
+
+```{python}
+generator = pipeline(
+    task="text-generation",
+    model=trainer.model,
+    tokenizer=tokenizer,
+)
+
+prompt = "Psychology students at Nottingham Trent University"
+generated = generator(
+    prompt,
+    max_length=40,
+    num_return_sequences=1,
+    do_sample=True,
+    top_p=0.95,
+    temperature=0.8,
+)
+```
+
+# Recap: Parallels with MLP Training
+
+Working with Transformers should now feel familiar.
+Hugging Face `Dataset` objects play the role that NumPy arrays had in the MLP tutorials.
+`AutoModelForCausalLM` is the language-modelling counterpart to the `nn.Sequential` factory.
+`TrainingArguments` and `Trainer` together provide the high-level fit and evaluate workflow previously handled by skorch's `NeuralNetClassifier`.
+Finally, the `pipeline` abstraction serves as an analogue to `net.predict()`, except that it returns generated text rather than discrete class labels.
+
+# Suggested Extensions
+
+To move beyond this toy demonstration you can swap `distilgpt2` for a larger checkpoint such as `gpt2-medium`, expand the corpus using datasets like WikiText, and introduce downstream evaluation metrics such as BLEU or ROUGE.
+The `trainer.save_model()` method makes it easy to export the fine-tuned weights or push them to the Hugging Face Hub for reuse in other projects.
+
+# Key Takeaways
+
+GPTs solve next-token prediction problems using autoregressive objectives and self-attention, but the tooling available today keeps the implementation high level.
+The Transformers library mirrors the ergonomics of scikit-learn and skorch: configure a model, prepare data, call `train()`, and analyse the results.
+Even a minimal example such as the one presented here demonstrates that fine-tuning a pretrained GPT on domain-specific text requires only a few dozen lines of readable code.
