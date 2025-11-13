@@ -1,17 +1,52 @@
 ---
-title: "GPTs with Transformers"
-subtitle: "High-level language modelling walkthrough"
+title: "GPT and Transformers: An Introduction"
 format:
-    html:
-        embed-resources: true
-        toc: true
-        toc-depth: 2
+  html:
+    embed-resources: true
+    minify: true
+    toc: true
+    toc-depth: 2
+    search: false          # drop Fuse.js + search UI
+    anchor-sections: false # drop anchor JS/CSS
+    code-tools: false      # drop copy button + tippy
+    code-line-numbers: false
+    smooth-scroll: false
+    highlight-style: tango # small CSS
+# IMPORTANT: smaller, quieter execution defaults
 execute:
   echo: true
   warning: false
   message: false
-  cache: false
+  include: true
+  results: hide            # hide long outputs unless overridden
+# Keep data frames static; avoid paged/JS tables
+df-print: default
 ---
+
+```{python}
+#| label: size-guard
+#| include: false
+import os, warnings
+warnings.filterwarnings("ignore")
+
+# Force tqdm to non-widget mode and silence bars from HF libraries
+
+os.environ["TQDM_DISABLE"] = "1"                 # respected by tqdm
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1" # respected by huggingface_hub
+
+# If using datasets, disable its progress bars explicitly
+
+try:
+    from datasets.utils.logging import disable_progress_bar as ds_disable_pb
+    ds_disable_pb()
+except Exception:
+    pass
+
+# If you ever imported ipywidgets, make sure no widget objects are created
+
+# (no `interact`, no `FloatProgress`, no `display(widget)`).
+
+```
 
 # Introduction
 
@@ -88,6 +123,7 @@ import numpy as np
 import torch
 import random
 import re
+import textwrap
 
 SEED = 42
 random.seed(SEED)
@@ -236,7 +272,6 @@ trainer = Trainer(
     eval_dataset=valid_ready,
 )
 train_output = trainer.train()
-train_output
 ```
 
 # Evaluating with Perplexity
@@ -267,11 +302,27 @@ prompt = "Psychology students at Nottingham Trent University"
 generated = generator(
     prompt,
     max_length=40,
-    num_return_sequences=1,
+    num_return_sequences=10,
     do_sample=True,
     top_p=0.95,
     temperature=0.8,
 )
+```
+
+We can display the generated texts, cleaning up any extraneous whitespace or special tokens for readability.
+```{python}
+for i, output in enumerate(generated):
+    text = output["generated_text"]
+    text = re.sub(r"\s+", " ", text)  # collapse whitespace
+    text = text.replace(tokenizer.eos_token, "").strip()  # remove special tokens
+    prefix = f"[{i+1}] "
+    wrapped = textwrap.fill(
+        text,
+        width=80,
+        initial_indent=prefix,
+        subsequent_indent=" " * len(prefix),
+    )
+    print(wrapped)
 ```
 
 # Recap: Parallels with MLP Training
